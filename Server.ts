@@ -63,23 +63,63 @@ var fileGetter = express();
 fileGetter.get("/get.lua"             ,(req:any,res:any)=>res.sendFile(__dirname+"/lua/get.lua"             ,"utf8"));
 fileGetter.get("/json.lua"            ,(req:any,res:any)=>res.sendFile(__dirname+"/lua/json.lua"            ,"utf8"));
 fileGetter.get("/websocketControl.lua",(req:any,res:any)=>res.sendFile(__dirname+"/lua/websocketControl.lua","utf8"));
+fileGetter.get("/startup.lua"         ,(req:any,res:any)=>res.sendFile(__dirname+"/lua/startup.lua"         ,"utf8"));
 server.on('request', fileGetter);
 
 // websocket server for the tutles to connect to
 const ws = new WebSocket.Server({server});
-const turtles:any[] = [];
-ws.on("connection",websocket=>{
+var turtles:any[] = [];
+var pings:any[] = [];
+function send(index:number,cmd:string) {
+    if (turtles[index]!=null)turtles[index].socket.send(cmd);
+}
+var pinging:boolean = false;
+function ping() {
+    if (pinging==true)return;
+    pinging=true;
+    for (let i = 0; i < turtles.length; i++) {
+        if (turtles[i]!=null) { pings[i]=false;send(i,JSON.stringify({"type":"ping","id":i})); }
+    }
+    setTimeout(() => {
+        for (let i = 0; i < pings.length; i++) {
+            if (pings[i]!=true) {
+                if(turtles[i].socket!=null)turtles[i].socket.close();
+                console.log("\""+turtles[i].name+"\" disconnected.");
+                if (browserWS) browserWS.send(JSON.stringify({type:"disconnection",name:turtles[i].name}));
+                delete turtles[i];
+            }
+        }
+        pings=[];
+        pinging=false;
+    }, 250);
+}
+var browserWS:WebSocket;
+ws.on("connection",(websocket:WebSocket)=>{
     websocket.on("close",(code: number, reason: Buffer)=>{
-        
+        ping();
     });
     websocket.on("message",(message:WebSocket.RawData)=>{
 		var msg:any = JSON.parse(message.toString());
         if (msg.type=="connection") {
-            
-        } else if (msg.type == "send") {
-			
+            if (msg.connection==null)return;
+            if (msg.connection=="turtle") {
+                for (let i:number = 0; i < turtles.length+1; i++) {
+                    if (turtles[i]==null) {
+                        turtles[i]={"socket":websocket,"name":"turtle"+i.toString()};
+                        console.log("\"turtle"+i.toString()+"\" connected.");
+                        if (browserWS) browserWS.send(JSON.stringify({type:"connection",name:"turtle"+i.toString()}));
+                        break;
+                    }
+                }
+            } else if (msg.connection=="browser") {
+                browserWS=websocket;
+            }
+        } else if (msg.type == "lua") {
+			send(msg.index,JSON.stringify(msg));
 		} else if (msg.type == "return") {
-			
+			browserWS.send(JSON.stringify(msg));
+		} else if (msg.type == "pong") {
+            pings[msg.id]=true;
 		}
     });
 });
@@ -93,7 +133,8 @@ server.listen(turtlePort,()=>{
 const webServerPort:number = 80;
 var app:any = express();
 var pages:{[key:string]:((req:any,res:any,send:(page?:string)=>void)=>void)} = {
-    "/index.html"   :(req:any,res:any,send:(page?:string)=>void)=>send("/webpage/index.html" ),
+    "/index.html":(req:any,res:any,send:(page?:string)=>void)=>send("/webpage/index.html" ),
+    "/Main.js"   :(req:any,res:any,send:(page?:string)=>void)=>send("/webpage/Main.js"    ),
 }
 Object.keys(pages).forEach((key) => {
     // for each page send the req,res, and "send" function which either sends

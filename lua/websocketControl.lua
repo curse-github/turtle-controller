@@ -32,9 +32,9 @@ function websocket()
                 func, err = loadstring("output[0], output[1], output[2] = "..obj.cmd)
                 setfenv(func, getfenv())
                 func()
-                if obj.rtrnTyp ~= "false" then
-                    ws.send("{\"type\":\"return\", \"id\":\""..obj.id.."\", \"rtrnTyp\":\""..obj.rtrnTyp.."\", \"return\":\""..prepare(output[0])..", "..prepare(output[1])..", "..prepare(output[2]).."\", \"evntNm\":\""..obj.evntNm.."\"}")
-                end
+                ws.send("{\"type\":\"return\", \"id\":\""..obj.id.."\", \"return\":[\""..prepare(output[0]).."\", \""..prepare(output[1]).."\", \""..prepare(output[2]).."\"]}")
+            elseif obj.type == "ping" then
+                ws.send("{\"type\":\"pong\", \"id\":\""..obj.id.."\"}")
             else
                 ws.send("{\"type\":\"reply\", \"id\":\""..obj.id.."\"}")
             end

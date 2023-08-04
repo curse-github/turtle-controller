@@ -1,0 +1,9 @@
+--modem = peripheral.wrap("side")
+    --modem.open(channel)
+    --modem.isOpen(channel)
+    --modem.close(channel)
+    --modem.closeAll()
+    --modem.transmit(channel, replyChannel, message)
+        --when getting a message it call the event "modem_message"
+        --reciving transmits
+            --name, modemSide, receiveChannel, replyChannel, message, distance = os.pullEvent("modem_message")

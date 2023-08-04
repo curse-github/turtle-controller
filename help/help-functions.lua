@@ -1,0 +1,37 @@
+--write(str)
+--print(int)
+--sleep(time)
+--type(variable) --input "str" returns string, input 8 returns int
+--read() --outputs a string of what the player typed --putting "*" as an input hides what the player is typing
+
+--os,
+    --os.time()
+    --os.shutdown()
+    --os.reboot()
+--fs or File system,
+    --fs.exists(path)
+    --fs.isDir(path)
+    --fs.getDir(path)
+    --fs.makeDir(path)
+    --fs.getSize(path)
+    --fs.move(path, path)
+    --fs.copy(path, path)
+    --fs.delete(path)
+    --fs.open(path, mode),  modes = {\"r\", \"w\", \"a\", \"rb\", \"wb\", \"ab\"}
+        --mode = \"r\"
+            --fs.readLine()
+            --fs.readAll()
+            --fs.close
+        --mode = \"w\" or \"a\"
+            --fs.write()
+            --fs.writeLine()
+            --fs.flush()
+            --fs.close()
+        --mode = \"rb\"
+            --fs.read()
+            --fs.close()
+        --mode = \"wb\" or \"ab\"
+            --fs.write()
+            --fs.flush()
+            --fs.close
+--http://www.lua.org/manual/5.1/

@@ -52,37 +52,99 @@ var Colors = /** @class */ (function () {
     Colors.Bgra = "\x1b[100m";
     return Colors;
 }());
+var http = require("http");
 var WebSocket = require("ws");
 var express = require("express");
 console.clear();
 var turtlePort = 58742; // lua getter and websocket server are on the same port
+var server = http.createServer();
 // web server for just getting the lua code
 var fileGetter = express();
 fileGetter.get("/get.lua", function (req, res) { return res.sendFile(__dirname + "/lua/get.lua", "utf8"); });
 fileGetter.get("/json.lua", function (req, res) { return res.sendFile(__dirname + "/lua/json.lua", "utf8"); });
 fileGetter.get("/websocketControl.lua", function (req, res) { return res.sendFile(__dirname + "/lua/websocketControl.lua", "utf8"); });
-fileGetter.listen(turtlePort, function () { console.log(Colors.Fgra + "File getter running at: " + Colors.Fgre + "http://localhost:" + turtlePort + Colors.R); });
+fileGetter.get("/startup.lua", function (req, res) { return res.sendFile(__dirname + "/lua/startup.lua", "utf8"); });
+server.on('request', fileGetter);
 // websocket server for the tutles to connect to
-var ws = new WebSocket.Server({ "server": fileGetter });
-console.log(Colors.Fgra + "WebSocket is running on " + Colors.Fgre + "ws://localhost:" + turtlePort + Colors.R);
+var ws = new WebSocket.Server({ server: server });
+var turtles = [];
+var pings = [];
+function send(index, cmd) {
+    if (turtles[index] != null)
+        turtles[index].socket.send(cmd);
+}
+var pinging = false;
+function ping() {
+    if (pinging == true)
+        return;
+    pinging = true;
+    for (var i = 0; i < turtles.length; i++) {
+        if (turtles[i] != null) {
+            pings[i] = false;
+            send(i, JSON.stringify({ "type": "ping", "id": i }));
+        }
+    }
+    setTimeout(function () {
+        for (var i = 0; i < pings.length; i++) {
+            if (pings[i] != true) {
+                if (turtles[i].socket != null)
+                    turtles[i].socket.close();
+                console.log("\"" + turtles[i].name + "\" disconnected.");
+                if (browserWS)
+                    browserWS.send(JSON.stringify({ type: "disconnection", name: turtles[i].name }));
+                delete turtles[i];
+            }
+        }
+        pings = [];
+        pinging = false;
+    }, 250);
+}
+var browserWS;
 ws.on("connection", function (websocket) {
     websocket.on("close", function (code, reason) {
+        ping();
     });
     websocket.on("message", function (message) {
         var msg = JSON.parse(message.toString());
         if (msg.type == "connection") {
+            if (msg.connection == null)
+                return;
+            if (msg.connection == "turtle") {
+                for (var i = 0; i < turtles.length + 1; i++) {
+                    if (turtles[i] == null) {
+                        turtles[i] = { "socket": websocket, "name": "turtle" + i.toString() };
+                        console.log("\"turtle" + i.toString() + "\" connected.");
+                        if (browserWS)
+                            browserWS.send(JSON.stringify({ type: "connection", name: "turtle" + i.toString() }));
+                        break;
+                    }
+                }
+            }
+            else if (msg.connection == "browser") {
+                browserWS = websocket;
+            }
         }
-        else if (msg.type == "send") {
+        else if (msg.type == "lua") {
+            send(msg.index, JSON.stringify(msg));
         }
         else if (msg.type == "return") {
+            browserWS.send(JSON.stringify(msg));
+        }
+        else if (msg.type == "pong") {
+            pings[msg.id] = true;
         }
     });
+});
+server.listen(turtlePort, function () {
+    console.log(Colors.Fgra + "File getter running at: " + Colors.Fgre + "http://localhost:" + turtlePort + Colors.R);
+    console.log(Colors.Fgra + "WebSocket is running on " + Colors.Fgre + "ws://localhost:" + turtlePort + Colors.R);
 });
 // webserver for the turtle controller
 var webServerPort = 80;
 var app = express();
 var pages = {
     "/index.html": function (req, res, send) { return send("/webpage/index.html"); },
+    "/Main.js": function (req, res, send) { return send("/webpage/Main.js"); },
 };
 Object.keys(pages).forEach(function (key) {
     // for each page send the req,res, and "send" function which either sends
