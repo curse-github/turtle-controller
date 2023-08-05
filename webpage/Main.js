@@ -21,6 +21,18 @@ function setup() {
     setupThree();
     setupWebsocket();
     setupButtons();
+    //add keyboard controls
+    window.addEventListener("keydown", function(e) {
+        switch (e.key) {
+            case "w"    : e.preventDefault();turtle.actions.forward  ();return;
+            case "a"    : e.preventDefault();turtle.actions.turnLeft ();return;
+            case "s"    : e.preventDefault();turtle.actions.back     ();return;
+            case "d"    : e.preventDefault();turtle.actions.turnRight();return;
+            case " "    : e.preventDefault();turtle.actions.up       ();return;
+            case "Shift": e.preventDefault();turtle.actions.down     ();return;
+            default: return;
+        }
+    });
 }
 window.onload = setup;
 
@@ -50,6 +62,7 @@ function setupWebsocket() {
 }
 
 function send(command,callback) {
+    if (turtleId==null){ callback(["false","nil","nil"]);return; }
     const id = generateUUID();
     ws.send(JSON.stringify({"type":"lua","index":turtleId,"id":id,"cmd":command}));
     callbacks[id] = callback;
@@ -68,9 +81,8 @@ var renderer;
 var controls;
 
 var defMaterial;
-var lineMaterial;
 var TurtleMat;
-function setupThree() {
+function setupThree() {//initalize threejs scene and materials
     scene = new THREE.Scene();
     const light = new THREE.AmbientLight(0x303030);
     scene.add(light);
@@ -78,11 +90,14 @@ function setupThree() {
     camera.position.z = 5;
     renderer = new THREE.WebGLRenderer({ alpha: true });
     renderer.setSize(window.innerWidth * 0.98, window.innerHeight * 0.98);
+    renderer.domElement.id="canvas";
+    renderer.domElement.tabindex=1;
+    
     document.body.appendChild(renderer.domElement);
-    controls = new OrbitControls(camera, renderer.domElement);
+    controls = window.controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableKeys = false
 
     defMaterial = new THREE.MeshBasicMaterial({ color: 0xc00030, transparent: true, opacity: 0.5 });
-    lineMaterial = new THREE.LineBasicMaterial({ color: 0xa8002a });
     TurtleMat = new THREE.MeshBasicMaterial({ map: new THREE.TextureLoader().load("model/turtle.png") });
     TurtleMat.map.magFilter = THREE.NearestFilter;
 
@@ -99,7 +114,8 @@ async function objLoadAsync(model) {
     });
 }
 var sceneData;
-async function setScene(index) {
+const setScene = window.setScene = async function(index) {
+    console.log("setScene("+index+");");
     sceneData={turtle:{model:null},worldData:[]};
     scene.clear();
 
@@ -114,18 +130,54 @@ async function setScene(index) {
     sceneData.turtle.model = object;
     turtle.update();
     turtle.cameraFocus();
+    Object.entries(turtles[turtleId].worldData).forEach(([x,worldDataX])=>{
+        if (worldDataX==null)return;
+        Object.entries(worldDataX).forEach(([y,worldDataXY])=>{
+            if (worldDataXY==null)return;
+            Object.entries(worldDataXY).forEach(([z,block])=>{
+                if (block==null) return;
+                setBlock([x,y,z],block.name,block.state);
+            })
+        })
+    });
+    detect();
 }
-async function setBlock(pos,blockid,nbt) {
+
+
+async function setBlock(pos,name,state) {
     const [x,y,z] = pos;
     const worldData = turtles[turtleId].worldData;
     if (worldData[x]==null)worldData[x]=[];
     if (worldData[x][y]==null)worldData[x][y]=[];
-    if (worldData[x][z]==null)worldData[x]=[];
+    if (worldData[x][y][z]==null)worldData[x][y][z]={name,state};
+    turtles[turtleId].worldData=worldData;
+    const worldModels = sceneData.worldData;
+    if (worldModels[x]==null)worldModels[x]=[];
+    if (worldModels[x][y]==null)worldModels[x][y]=[];
+    if (worldModels[x][y][z]!=null) scene.remove(worldModels[x][y][z]);
     var cubeGeometry = new THREE.BoxGeometry();
-    cubeGeometry.computeFaceNormals();
-    cube = new THREE.Mesh(cubeGeometry, defMaterial);
-    
-    turtles[turtleId].worldData=worldData();
+    var cube = new THREE.Mesh(cubeGeometry, defMaterial);
+    cube.position.set(...pos);
+    scene.add(cube);
+    worldModels[x][y][z]=cube;
+    sceneData.worldData=worldModels;
+}
+async function detect() {
+    //detect up and set block if needed
+    const upOutput = await turtle.actions.inspectUp();
+    if (upOutput!=null) setBlock(vec3Add(turtle.getPos(),[0,1,0]),upOutput.name,upOutput.state);
+    //detect down and set block if needed
+    const downOutput = await turtle.actions.inspectDown();
+    if (downOutput!=null) setBlock(vec3Add(turtle.getPos(),[0,-1,0]),downOutput.name,downOutput.state);
+    //detect in each direction and set blocks if needed
+    for (let i = 0; i < 4; i++) {
+        const output = await turtle.actions.inspect();
+        if (output!=null) {
+            const pos=vec3Add(turtle.getPos(),turtle.getForward())
+            setBlock(pos,output.name,output.state);
+        }
+        await turtle.actions.turnRight();
+    }
 }
 const turtle = window.turtle = {//window.turtle make is accessable from the console
     "get":()=>{ return turtles[turtleId]; },
@@ -165,25 +217,25 @@ const turtle = window.turtle = {//window.turtle make is accessable from the cons
             const out = await sendAsync("turtle.up()");
             if (out[0]=="false") return;
             const pos = turtle.getPos();pos[1]++;
-            turtle.setPos(pos);
+            turtle.setPos(pos);detect();
         },
         "down":async()=>{
             const out = await sendAsync("turtle.down()");
             if (out[0]=="false") return;
             const pos = turtle.getPos();pos[1]--;
-            turtle.setPos(pos);
+            turtle.setPos(pos);detect();
         },
         "forward":async()=>{
             const out = await sendAsync("turtle.forward()");
             if (out[0]=="false") return;
             const pos=vec3Add(turtle.getPos(),turtle.getForward())
-            turtle.setPos(pos);
+            turtle.setPos(pos);detect();
         },
         "back":async()=>{
             const out = await sendAsync("turtle.back()");
             if (out[0]=="false") return;
             const pos=vec3Add(turtle.getPos(),turtle.getBack())
-            turtle.setPos(pos);
+            turtle.setPos(pos);detect();
         },
     
         "dig":async()=>{ const out = await sendAsync("turtle.dig()" ); },
