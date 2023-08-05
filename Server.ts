@@ -68,7 +68,7 @@ server.on('request', fileGetter);
 
 // websocket server for the tutles to connect to
 const ws = new WebSocket.Server({server});
-var turtles:any[] = [];
+var turtles:{socket:WebSocket,name:string}[] = [];
 var pings:any[] = [];
 function send(index:number,cmd:string) {
     if (turtles[index]!=null)turtles[index].socket.send(cmd);
@@ -83,9 +83,9 @@ function ping() {
     setTimeout(() => {
         for (let i = 0; i < pings.length; i++) {
             if (pings[i]!=true) {
-                if(turtles[i].socket!=null)turtles[i].socket.close();
-                console.log("\""+turtles[i].name+"\" disconnected.");
-                if (browserWS) browserWS.send(JSON.stringify({type:"disconnection",name:turtles[i].name}));
+                if(turtles[i].socket!=null&&turtles[i].socket.readyState==WebSocket.OPEN) turtles[i].socket.close();
+                console.log(Colors.Fgre+"\""+turtles[i].name+"\""+Colors.Fgra+" disconnected."+Colors.R);
+                if (browserWS) browserWS.send(JSON.stringify({"type":"disconnection","index":i}));
                 delete turtles[i];
             }
         }
@@ -106,13 +106,17 @@ ws.on("connection",(websocket:WebSocket)=>{
                 for (let i:number = 0; i < turtles.length+1; i++) {
                     if (turtles[i]==null) {
                         turtles[i]={"socket":websocket,"name":"turtle"+i.toString()};
-                        console.log("\"turtle"+i.toString()+"\" connected.");
-                        if (browserWS) browserWS.send(JSON.stringify({type:"connection",name:"turtle"+i.toString()}));
+                        console.log(Colors.Fgre+"\"turtle"+i.toString()+"\""+Colors.Fgra+" connected."+Colors.R);
+                        if (browserWS) browserWS.send(JSON.stringify({"type":"connection","index":i,"name":"turtle"+i.toString()}));
                         break;
                     }
                 }
             } else if (msg.connection=="browser") {
+                if (browserWS!=null) { browserWS.send(JSON.stringify({"type":""}));browserWS.close(); }
                 browserWS=websocket;
+                for (let i = 0; i < turtles.length; i++) {
+                    if(turtles[i]!=null) browserWS.send(JSON.stringify({"type":"connection","index":i,"name":turtles[i].name}));
+                }
             }
         } else if (msg.type == "lua") {
 			send(msg.index,JSON.stringify(msg));
@@ -126,22 +130,28 @@ ws.on("connection",(websocket:WebSocket)=>{
 server.listen(turtlePort,()=>{
     console.log(Colors.Fgra+"File getter running at: "+Colors.Fgre+"http://localhost:"+turtlePort+Colors.R);
     console.log(Colors.Fgra+"WebSocket is running on "+Colors.Fgre+  "ws://localhost:"+turtlePort+Colors.R);
-})
+});
 
 
 // webserver for the turtle controller
 const webServerPort:number = 80;
-var app:any = express();
-var pages:{[key:string]:((req:any,res:any,send:(page?:string)=>void)=>void)} = {
-    "/index.html":(req:any,res:any,send:(page?:string)=>void)=>send("/webpage/index.html" ),
-    "/Main.js"   :(req:any,res:any,send:(page?:string)=>void)=>send("/webpage/Main.js"    ),
+var app = express();
+var pages:{[key:string]:((req:any,res:any,send:(page:string,mime?:string)=>void)=>void)} = {
+    "/index.html"      :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/index.html"),
+    "/index.css"       :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/index.css" ),
+    "/model/turtle.png":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/model/turtle.png"  ),
+    "/model/turtle.obj":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/model/turtle.obj"  ),
+    "/Main.js"         :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/Main.js"   ,"text/javascript")
 }
 Object.keys(pages).forEach((key) => {
     // for each page send the req,res, and "send" function which either sends
     // the file at the path of the key from the "pages" object or the argument passed in
     app.get(key, (req:any, res:any)=>{
-        pages[key](req,res,(page?:string)=>{ res.sendFile(__dirname+(page!=null?page:key),"utf8"); });
+        pages[key](req,res,(page:string,mime?:string)=>{ res.contentType(mime||"text/html");res.sendFile(__dirname+(page!=null?page:key),"utf8"); });
     });
 });
-app.get("*",(req:any,res:any)=>{ res.redirect("/index.html"); });
+app.get("/",(req:any,res:any)=>{ res.redirect("/index.html"); });
+
+app.use("/three",express.static(__dirname+"/node_modules/three/"))
+app.use("/UI",express.static(__dirname+"/UI/"))
 app.listen(webServerPort,()=>{ console.log(Colors.Fgra+"Web server is running at: "+Colors.Fgre+"http://localhost:"+webServerPort+Colors.R); });

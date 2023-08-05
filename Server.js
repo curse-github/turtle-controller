@@ -87,11 +87,11 @@ function ping() {
     setTimeout(function () {
         for (var i = 0; i < pings.length; i++) {
             if (pings[i] != true) {
-                if (turtles[i].socket != null)
+                if (turtles[i].socket != null && turtles[i].socket.readyState == WebSocket.OPEN)
                     turtles[i].socket.close();
-                console.log("\"" + turtles[i].name + "\" disconnected.");
+                console.log(Colors.Fgre + "\"" + turtles[i].name + "\"" + Colors.Fgra + " disconnected." + Colors.R);
                 if (browserWS)
-                    browserWS.send(JSON.stringify({ type: "disconnection", name: turtles[i].name }));
+                    browserWS.send(JSON.stringify({ "type": "disconnection", "index": i }));
                 delete turtles[i];
             }
         }
@@ -113,15 +113,23 @@ ws.on("connection", function (websocket) {
                 for (var i = 0; i < turtles.length + 1; i++) {
                     if (turtles[i] == null) {
                         turtles[i] = { "socket": websocket, "name": "turtle" + i.toString() };
-                        console.log("\"turtle" + i.toString() + "\" connected.");
+                        console.log(Colors.Fgre + "\"turtle" + i.toString() + "\"" + Colors.Fgra + " connected." + Colors.R);
                         if (browserWS)
-                            browserWS.send(JSON.stringify({ type: "connection", name: "turtle" + i.toString() }));
+                            browserWS.send(JSON.stringify({ "type": "connection", "index": i, "name": "turtle" + i.toString() }));
                         break;
                     }
                 }
             }
             else if (msg.connection == "browser") {
+                if (browserWS != null) {
+                    browserWS.send(JSON.stringify({ "type": "" }));
+                    browserWS.close();
+                }
                 browserWS = websocket;
+                for (var i = 0; i < turtles.length; i++) {
+                    if (turtles[i] != null)
+                        browserWS.send(JSON.stringify({ "type": "connection", "index": i, "name": turtles[i].name }));
+                }
             }
         }
         else if (msg.type == "lua") {
@@ -144,14 +152,19 @@ var webServerPort = 80;
 var app = express();
 var pages = {
     "/index.html": function (req, res, send) { return send("/webpage/index.html"); },
-    "/Main.js": function (req, res, send) { return send("/webpage/Main.js"); },
+    "/index.css": function (req, res, send) { return send("/webpage/index.css"); },
+    "/model/turtle.png": function (req, res, send) { return send("/model/turtle.png"); },
+    "/model/turtle.obj": function (req, res, send) { return send("/model/turtle.obj"); },
+    "/Main.js": function (req, res, send) { return send("/webpage/Main.js", "text/javascript"); }
 };
 Object.keys(pages).forEach(function (key) {
     // for each page send the req,res, and "send" function which either sends
     // the file at the path of the key from the "pages" object or the argument passed in
     app.get(key, function (req, res) {
-        pages[key](req, res, function (page) { res.sendFile(__dirname + (page != null ? page : key), "utf8"); });
+        pages[key](req, res, function (page, mime) { res.contentType(mime || "text/html"); res.sendFile(__dirname + (page != null ? page : key), "utf8"); });
     });
 });
-app.get("*", function (req, res) { res.redirect("/index.html"); });
+app.get("/", function (req, res) { res.redirect("/index.html"); });
+app.use("/three", express.static(__dirname + "/node_modules/three/"));
+app.use("/UI", express.static(__dirname + "/UI/"));
 app.listen(webServerPort, function () { console.log(Colors.Fgra + "Web server is running at: " + Colors.Fgre + "http://localhost:" + webServerPort + Colors.R); });
