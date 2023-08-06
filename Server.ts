@@ -137,11 +137,14 @@ server.listen(turtlePort,()=>{
 const webServerPort:number = 80;
 var app = express();
 var pages:{[key:string]:((req:any,res:any,send:(page:string,mime?:string)=>void)=>void)} = {
-    "/index.html"      :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/index.html"),
-    "/index.css"       :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/index.css" ),
-    "/model/turtle.png":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/model/turtle.png"  ),
-    "/model/turtle.obj":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/model/turtle.obj"  ),
-    "/Main.js"         :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/Main.js"   ,"text/javascript")
+    "/index.html"      :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/index.html","text/html"      ),
+    "/index.css"       :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/index.css" ,"text/css"       ),
+    "/model/turtle.png":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/model/turtle.png"  ,"image/png"      ),
+    "/model/turtle.obj":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/model/turtle.obj"  ,"model/obj"      ),
+    "/favicon.png"     :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/favicon.png"       ,"image/png"      ),
+    "/Main.js"         :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/Main.js"   ,"text/javascript"),
+    "/OrbitControls.js":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/three/OrbitControls.js","text/javascript"),
+    "/OBJLoader.js"    :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/three/OBJLoader.js"    ,"text/javascript")
 }
 Object.keys(pages).forEach((key) => {
     // for each page send the req,res, and "send" function which either sends
@@ -151,7 +154,9 @@ Object.keys(pages).forEach((key) => {
     });
 });
 app.get("/",(req:any,res:any)=>{ res.redirect("/index.html"); });
-
-app.use("/three",express.static(__dirname+"/node_modules/three/"))
-app.use("/UI",express.static(__dirname+"/UI/"))
+app.use("/three/src"     ,express.static(__dirname+"/node_modules/three/src/"  ));
+app.use("/UI"            ,express.static(__dirname+"/UI/"                      ));
+app.use("/blockstates"   ,express.static(__dirname+"/minecraft/blockstates/"   ));
+app.use("/models/block"  ,express.static(__dirname+"/minecraft/models/block/"  ));
+app.use("/textures/block",express.static(__dirname+"/minecraft/textures/block/"));
 app.listen(webServerPort,()=>{ console.log(Colors.Fgra+"Web server is running at: "+Colors.Fgre+"http://localhost:"+webServerPort+Colors.R); });
