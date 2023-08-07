@@ -106,8 +106,9 @@ ws.on("connection",(websocket:WebSocket)=>{
                 for (let i:number = 0; i < turtles.length+1; i++) {
                     if (turtles[i]==null) {
                         turtles[i]={"socket":websocket,"name":"turtle"+i.toString()};
-                        console.log(Colors.Fgre+"\"turtle"+i.toString()+"\""+Colors.Fgra+" connected."+Colors.R);
-                        if (browserWS) browserWS.send(JSON.stringify({"type":"connection","index":i,"name":"turtle"+i.toString()}));
+                        console.log(Colors.Fgre+"\""+turtles[i].name+"\""+Colors.Fgra+" connected."+Colors.R);
+                        send(i,JSON.stringify({"type":"lua","id":"setNameServer","cmd":"os.setComputerLabel(\""+turtles[i].name+"\")"}));
+                        if (browserWS!=null) browserWS.send(JSON.stringify({"type":"connection","index":i,"name":turtles[i].name}));
                         break;
                     }
                 }
@@ -121,7 +122,8 @@ ws.on("connection",(websocket:WebSocket)=>{
         } else if (msg.type == "lua") {
 			send(msg.index,JSON.stringify(msg));
 		} else if (msg.type == "return") {
-			browserWS.send(JSON.stringify(msg));
+            if (msg.id=="setNameServer") return;
+			if (browserWS!=null) browserWS.send(JSON.stringify(msg));
 		} else if (msg.type == "pong") {
             pings[msg.id]=true;
 		}
@@ -137,14 +139,17 @@ server.listen(turtlePort,()=>{
 const webServerPort:number = 80;
 var app = express();
 var pages:{[key:string]:((req:any,res:any,send:(page:string,mime?:string)=>void)=>void)} = {
+    //my code
     "/index.html"      :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/index.html","text/html"      ),
     "/index.css"       :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/index.css" ,"text/css"       ),
     "/model/turtle.png":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/model/turtle.png"  ,"image/png"      ),
     "/model/turtle.obj":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/model/turtle.obj"  ,"model/obj"      ),
     "/favicon.png"     :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/favicon.png"       ,"image/png"      ),
     "/Main.js"         :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/Main.js"   ,"text/javascript"),
-    "/OrbitControls.js":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/three/OrbitControls.js","text/javascript"),
-    "/OBJLoader.js"    :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/three/OBJLoader.js"    ,"text/javascript")
+    //threejs utils
+    "/OrbitControls.js"      :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/three/OrbitControls.js"          ,"text/javascript"),
+    "/OBJLoader.js"          :( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/three/OBJLoader.js"              ,"text/javascript"),
+    "/BufferGeometryUtils.js":( req:any,res:any,send:(page:string,mime?:string)=>void)=>send("/webpage/three/BufferGeometryUtils.js"    ,"text/javascript")
 }
 Object.keys(pages).forEach((key) => {
     // for each page send the req,res, and "send" function which either sends

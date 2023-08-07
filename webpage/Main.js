@@ -1,13 +1,18 @@
-import * as THREE from "/three/src/Three.js"
-import { OrbitControls } from "/three/examples/jsm/controls/OrbitControls.js"
-import { OBJLoader } from "/three/examples/jsm/loaders/OBJLoader.js"
-function threeVec2vec3(threeVec3) {
-    return [threeVec3.x,threeVec3.y,threeVec3.z];
-}
-function vec3Add(a,b) {
-    return [a[0]+b[0],a[1]+b[1],a[2]+b[2]];
-}
+/*
+TODO:
+    save state
+    orienting blocks
+    switch turtles
+    color leaf textures
+*/
 
+
+import * as THREE from "/three/src/Three.js"
+window.THREE=THREE;
+import { OrbitControls } from "/OrbitControls.js"
+import { OBJLoader } from "/OBJLoader.js"
+import * as BufferGeometryUtils from "/BufferGeometryUtils.js"
+//#region helpers
 function generateUUID() {
 	var a = new Date().getTime();//Timestamp
 	return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -17,12 +22,190 @@ function generateUUID() {
 		return (c === 'x' ? b : (b & 0x3 | 0x8)).toString(16);
 	});
 }
+function threeVec2vec3(threeVec3) {
+    return [threeVec3.x,threeVec3.y,threeVec3.z];
+}
+function vec3Add(a,b) {
+    return [a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+}
+async function objLoadAsync(model) {
+    var loader = new OBJLoader();
+    return new Promise((resolve)=>{
+        loader.load(model, resolve);
+    });
+}
+async function fetchJsonAsync(url,input) {
+    return new Promise((resolve) => {
+        fetch(url, {
+            headers: {}
+        }).then((response) => response.json())
+        .then((json)=>{
+            resolve(json,input);
+        });
+    });
+}
+async function getBlockstate(name) {
+    var tmp;
+    tmp=name.includes(":")?name.split(":")[1]:name;//removes "minecraft:" from the beginning if needed
+    return fetchJsonAsync("/blockstates/"+tmp+".json");
+}
+async function getModel(name) {
+    return fetchJsonAsync("/models/"+name+".json");
+}
+var modelCache=window.modelCache={};
+async function getModelRecursive(name) {
+    var tmp;
+    tmp=name.includes(":")?name.split(":")[1]:name;//removes "minecraft:" from the beginning if needed
+    if (modelCache[tmp]!=null) return modelCache[tmp];//returns a cached model
+    const model = await getModel(tmp);
+    model.path=[tmp];
+    if (model.parent!=null&&model.parent!="builtin/generated") {
+        var parentModel = await getModelRecursive(model.parent);
+        //element from higher layer replace lower
+        if (model.ambientocclusion==null&&parentModel.ambientocclusion!=null)model.ambientocclusion=parentModel.ambientocclusion;
+        if (model.elements==null&&parentModel.elements!=null)model.elements=parentModel.elements;
+        if (model.display==null&&parentModel.display!=null)model.display=parentModel.display;
+        //element from lower layer replace above
+        if (parentModel.parent!=null) model.parent=parentModel.parent; else delete model.parent;
+        if (parentModel.textures!=null)model.textures={...parentModel.textures,...model.textures};
+        if (parentModel.base!=null)model.base=parentModel.base;
+        model.path=[...parentModel.path,...model.path];
+    }
+    modelCache[tmp]=model;
+    return model;
+}
+var materialCache = {};
+async function getMaterial(name,opacity) {
+    var tmp;
+    tmp=name.includes(":")?name.split(":")[1]:name;//removes "minecraft:" from the beginning if needed
+    if (materialCache[tmp]!=null) return materialCache[tmp];//returns a cached model
+    var texture = new THREE.TextureLoader().load("/textures/"+tmp+".png");
+    var material = await new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity:opacity||1 });
+    material.map.magFilter = THREE.NearestFilter;// makes pixels not blurry
+    material.toneMapped=false;
+    materialCache[tmp]=material;
+    return material;
+}
+const SupportedModelTypes = [
+    "block/block",
+    "block/cube",
+    "block/cube_mirrored",
+    "block/cube_north_west_mirrored",
+
+    "block/grass_block",
+    "block/cube_all",
+    "block/cube_mirrored_all",
+    "block/cube_north_west_mirrored_all",
+    "block/cube_bottom_top",
+    "block/cube_column",
+    "block/cube_column_mirrored",
+    "block/cube_column_horizontal",
+    "block/cube_mirrored",
+    "block/orientable_with_bottom",
+
+    "block/slime_block",
+    "block/honey_block"
+]
+async function getBlockMesh(name,state) {
+    var blockstate = await getBlockstate(name);
+    if (blockstate.multipart!=null){console.log("\""+name+"\"","multipart!");return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);}
+    if (blockstate.variants==null)return;
+    var variantKey = Object.keys(blockstate.variants)[0];//first key of the variants
+    var variant;
+    if (Object.keys(blockstate.variants).length>1) {//if there is more than one variant
+        //get keys of blockstate, filter only ones used to get variant, sort alphebetically, map each key to its value, and finally join on commas.
+        //gives you something like "face=floor,facing=west,powered=false"
+        const states=Object.keys(state).filter((key)=>variantKey.includes(key)).sort().map((key)=>key+"="+state[key]).join(",");
+        variant=blockstate.variants[states];
+    } else {
+        variant=blockstate.variants[variantKey];//return only variant
+    }
+    if ((typeof variant)=="object" && Array.isArray(variant)) variant = variant[Math.ceil(Math.random()*variant.length)-1];//pick random variant
+    if (variant==null||variant.model==null) return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);
+    const model = await getModelRecursive(variant.model);
+    if (!SupportedModelTypes.includes(model.path[0])) { console.log("unsupported model type: \""+model.path[0]+"\"");console.log(model);return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial); }
+    const mySwitch = {//materials list is [left, right, top, bottom, front, back]
+        "block/block":async()=>{
+            if (!SupportedModelTypes.includes(model.path[1])) { console.log("unsupported model type: \""+model.path[1]+"\"");console.log(model);return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial); }
+            model.path.shift();
+            return mySwitch[model.path[0]]();
+        },
+        "block/cube":()=>mySwitch["block/block"](),
+        "block/cube_mirrored":()=>mySwitch["block/cube"](),
+        "block/cube_all":async()=>{
+            const all = await getMaterial(model.textures.all);
+            return new THREE.Mesh(new THREE.BoxGeometry(), all);
+        },
+        "block/cube_mirrored_all":()=>mySwitch["block/cube_all"](),
+        "block/cube_north_west_mirrored_all":()=>mySwitch["block/cube_all"](),
+        "block/leaves":()=>mySwitch["block/cube_all"](),
+        "block/cube_bottom_top":async()=>{
+            const top = await getMaterial(model.textures.top);
+            const bottom = await getMaterial(model.textures.bottom);
+            const side = await getMaterial(model.textures.side);
+            var materials = [side, side, top, bottom, side, side];
+            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+        },
+        "block/grass_block":()=>mySwitch["block/cube_bottom_top"](),
+        "block/cube_column":async()=>{
+            const end = await getMaterial(model.textures.end);
+            const side = await getMaterial(model.textures.side);
+            var materials = [side, side, end, end, side, side];
+            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+        },
+        "block/cube_column_mirrored":()=>mySwitch["block/cube_column"](),
+        "block/cube_column_horizontal":async()=>{
+            const end = await getMaterial(model.textures.end);
+            const side = await getMaterial(model.textures.side);
+            var materials = [end, end, side, side, side, side];
+            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+        },
+        "block/orientable":async()=>{
+            const top = await getMaterial(model.textures.top);
+            const bottom = await getMaterial(model.textures.bottom);
+            const front = await getMaterial(model.textures.front);
+            const side = await getMaterial(model.textures.side);
+            var materials = [side, side, top, bottom, front, side];
+            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+        },
+        "block/orientable_with_bottom":async()=>{
+            const top = await getMaterial(model.textures.top);
+            const front = await getMaterial(model.textures.front);
+            const side = await getMaterial(model.textures.side);
+            var materials = [side, side, top, top, front, side];
+            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+        },
+        "block/slime_block":async()=>{
+            const texture = await getMaterial(model.textures.texture);
+            const geometry = BufferGeometryUtils.mergeGeometries([new THREE.BoxGeometry(10/16,10/16,10/16),new THREE.BoxGeometry()]);
+            return new THREE.Mesh(geometry,texture);
+        },
+        "block/honey_block":async()=>{
+            const down = await getMaterial(model.textures.down);
+            const up = await getMaterial(model.textures.up);
+            const side = await getMaterial(model.textures.side);
+            const geometry = BufferGeometryUtils.mergeGeometries([new THREE.BoxGeometry(14/16,14/16,14/16),new THREE.BoxGeometry()]);
+            geometry.groups = [
+                {start:0 ,count:6*6,materialIndex:0 },{start:36,count:12,materialIndex:2 },
+                {start:48,count:6,materialIndex:1 },{start:54,count:6,materialIndex:0 },
+                {start:60,count:12,materialIndex:2}
+            ];
+            return new THREE.Mesh(geometry,[down,up,side]);
+        },
+        "any":async()=>{
+            
+        }
+    }
+    return mySwitch[model.path[0]]();
+}
+//#endregion helpers
+
 function setup() {
     setupThree();
     setupWebsocket();
     setupButtons();
     //add keyboard controls
-    window.addEventListener("keydown", function(e) {
+    window.addEventListener("keydown", async function(e) {
         switch (e.key) {
             case "w"    : e.preventDefault();turtle.actions.forward  ();return;
             case "a"    : e.preventDefault();turtle.actions.turnLeft ();return;
@@ -48,13 +231,14 @@ function setupWebsocket() {
     ws.onmessage = (e)=>{
         var msg = JSON.parse(e.data);
         if (msg.type == "connection") {
-            turtles[msg.index]={"name":msg.name,pos:[0,0,0],d:3,worldData:[]};
+            turtles[msg.index]={"name":msg.name,pos:[0,0,0],d:3,worldData:[],busy:false};
             if (turtleId==undefined) {
                 setScene(msg.index)
             }
         } else if (msg.type == "disconnection") {
             delete turtles[msg.index];
-            if (turtleId==msg.index) turtleId=undefined;
+            if (turtleId==msg.index) {turtleId=undefined;scene.clear();}
+            
         } else if (msg.type == "return") {
             if (callbacks[msg.id]!=null) callbacks[msg.id](msg.return.map((el)=>el.split("|").join(":")));
         }
@@ -84,17 +268,16 @@ var defMaterial;
 var TurtleMat;
 function setupThree() {//initalize threejs scene and materials
     scene = new THREE.Scene();
-    const light = new THREE.AmbientLight(0x303030);
-    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.z = 5;
     renderer = new THREE.WebGLRenderer({ alpha: true });
     renderer.setSize(window.innerWidth * 0.98, window.innerHeight * 0.98);
-    renderer.domElement.id="canvas";
     renderer.domElement.tabindex=1;
+    renderer.outputColorSpace=THREE.LinearSRGBColorSpace;
     
     document.body.appendChild(renderer.domElement);
-    controls = window.controls = new OrbitControls(camera, renderer.domElement);
+    controls = new OrbitControls(camera, renderer.domElement);
     controls.enableKeys = false
 
     defMaterial = new THREE.MeshBasicMaterial({ color: 0xc00030, transparent: true, opacity: 0.5 });
@@ -107,15 +290,8 @@ function animate() {
     requestAnimationFrame(animate);
     renderer.render(scene, camera);
 }
-async function objLoadAsync(model) {
-    var loader = new OBJLoader();
-    return new Promise((resolve)=>{
-        loader.load(model, resolve);
-    });
-}
 var sceneData;
-const setScene = window.setScene = async function(index) {
-    console.log("setScene("+index+");");
+async function setScene(index) {
     sceneData={turtle:{model:null},worldData:[]};
     scene.clear();
 
@@ -142,8 +318,6 @@ const setScene = window.setScene = async function(index) {
     });
     detect();
 }
-
-
 async function setBlock(pos,name,state) {
     const [x,y,z] = pos;
     const worldData = turtles[turtleId].worldData;
@@ -155,14 +329,18 @@ async function setBlock(pos,name,state) {
     if (worldModels[x]==null)worldModels[x]=[];
     if (worldModels[x][y]==null)worldModels[x][y]=[];
     if (worldModels[x][y][z]!=null) scene.remove(worldModels[x][y][z]);
-    var cubeGeometry = new THREE.BoxGeometry();
-    var cube = new THREE.Mesh(cubeGeometry, defMaterial);
+    var cube = await getBlockMesh(name,state);
     cube.position.set(...pos);
     scene.add(cube);
     worldModels[x][y][z]=cube;
     sceneData.worldData=worldModels;
+
 }
-async function detect() {
+//#endregion threejs
+
+async function detect(recursive) {
+    if (recursive!==true&&turtle.isBusy()) return;
+    if (recursive!==true) turtle.setBusy(true);
     //detect up and set block if needed
     const upOutput = await turtle.actions.inspectUp();
     if (upOutput!=null) setBlock(vec3Add(turtle.getPos(),[0,1,0]),upOutput.name,upOutput.state);
@@ -176,11 +354,15 @@ async function detect() {
             const pos=vec3Add(turtle.getPos(),turtle.getForward())
             setBlock(pos,output.name,output.state);
         }
-        await turtle.actions.turnRight();
+        await turtle.actions.turnRight(true);
     }
+    if (recursive!==true) turtle.setBusy(false);
 }
 const turtle = window.turtle = {//window.turtle make is accessable from the console
     "get":()=>{ return turtles[turtleId]; },
+    "isBusy":()=>{ return turtles[turtleId].busy; },
+    "setBusy":(value,line)=>{ turtles[turtleId].busy=value; },
+
     "getPos":()=>{ return turtles[turtleId].pos; },
     "getRot":()=>{ return turtles[turtleId].d; },
     "getForward":()=>{ switch(turtles[turtleId].d) {
@@ -203,39 +385,57 @@ const turtle = window.turtle = {//window.turtle make is accessable from the cons
     "updateRot":()=>{ sceneData.turtle.model.rotation.y = -(Math.PI/2)*(turtles[turtleId].d+1); },
     "update":()=>{ turtle.updatePos();turtle.updateRot(); },
     "actions":{
-        "turnLeft":async()=>{
+        "turnLeft":async(recursive)=>{
+            if (recursive!==true&&turtle.isBusy()) return;
+            if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.turnLeft()");
             if (out[0]=="false") return;
             turtle.setRot((turtle.getRot()+3)%4);
+            if (recursive!==true) turtle.setBusy(false);
         },
-        "turnRight":async()=>{
+        "turnRight":async(recursive)=>{
+            if (recursive!==true&&turtle.isBusy()) return;
+            if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.turnRight()");
             if (out[0]=="false") return;
             turtle.setRot((turtle.getRot()+1)%4);
+            if (recursive!==true) turtle.setBusy(false);
         },
-        "up":async()=>{
+        "up":async(recursive)=>{
+            if (recursive!==true&&turtle.isBusy()) return;
+            if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.up()");
             if (out[0]=="false") return;
             const pos = turtle.getPos();pos[1]++;
-            turtle.setPos(pos);detect();
+            turtle.setPos(pos);await detect(true);
+            if (recursive!==true) turtle.setBusy(false);
         },
-        "down":async()=>{
+        "down":async(recursive)=>{
+            if (recursive!==true&&turtle.isBusy()) return;
+            if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.down()");
             if (out[0]=="false") return;
             const pos = turtle.getPos();pos[1]--;
-            turtle.setPos(pos);detect();
+            turtle.setPos(pos);await detect(true);
+            if (recursive!==true) turtle.setBusy(false);
         },
-        "forward":async()=>{
+        "forward":async(recursive)=>{
+            if (recursive!==true&&turtle.isBusy()) return;
+            if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.forward()");
             if (out[0]=="false") return;
             const pos=vec3Add(turtle.getPos(),turtle.getForward())
-            turtle.setPos(pos);detect();
+            turtle.setPos(pos);await detect(true);
+            if (recursive!==true) turtle.setBusy(false);
         },
-        "back":async()=>{
+        "back":async(recursive)=>{
+            if (recursive!==true&&turtle.isBusy()) return;
+            if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.back()");
             if (out[0]=="false") return;
             const pos=vec3Add(turtle.getPos(),turtle.getBack())
-            turtle.setPos(pos);detect();
+            turtle.setPos(pos);await detect(true);
+            if (recursive!==true) turtle.setBusy(false);
         },
     
         "dig":async()=>{ const out = await sendAsync("turtle.dig()" ); },
@@ -270,9 +470,7 @@ function setupButtons() {
     const entries = Object.entries(turtle.actions);
     for (let i = 0; i < entries.length; i++) {
         const [key,value] = entries[i];
-        window[key] = value;
         const element = document.getElementById(key);
         if (element) element.addEventListener("click",value);
     }
 }
-//#endregion threejs
