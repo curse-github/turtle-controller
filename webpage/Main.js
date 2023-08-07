@@ -1,9 +1,9 @@
 /*
 TODO:
-    save state
     orienting blocks
     switch turtles
     color leaf textures
+    render mushroom block
 */
 
 
@@ -96,15 +96,23 @@ const SupportedModelTypes = [
     "block/cube_all",
     "block/cube_mirrored_all",
     "block/cube_north_west_mirrored_all",
+    "block/leaves",
     "block/cube_bottom_top",
     "block/cube_column",
     "block/cube_column_mirrored",
     "block/cube_column_horizontal",
     "block/cube_mirrored",
     "block/orientable_with_bottom",
+    "block/cube_top",
+    "block/mangrove_roots",
 
     "block/slime_block",
-    "block/honey_block"
+    "block/honey_block",
+    "block/crafting_table",
+    "block/cartography_table",
+    "block/fletching_table",
+    "block/smithing_table",
+    "block/dried_kelp_block"
 ]
 async function getBlockMesh(name,state) {
     var blockstate = await getBlockstate(name);
@@ -124,7 +132,7 @@ async function getBlockMesh(name,state) {
     if (variant==null||variant.model==null) return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);
     const model = await getModelRecursive(variant.model);
     if (!SupportedModelTypes.includes(model.path[0])) { console.log("unsupported model type: \""+model.path[0]+"\"");console.log(model);return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial); }
-    const mySwitch = {//materials list is [left, right, top, bottom, front, back]
+    const mySwitch = {//materials list is [left, right, top, bottom, front, back] or [east, west, top, bottom, north, south]
         "block/block":async()=>{
             if (!SupportedModelTypes.includes(model.path[1])) { console.log("unsupported model type: \""+model.path[1]+"\"");console.log(model);return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial); }
             model.path.shift();
@@ -132,6 +140,7 @@ async function getBlockMesh(name,state) {
         },
         "block/cube":()=>mySwitch["block/block"](),
         "block/cube_mirrored":()=>mySwitch["block/cube"](),
+        "block/cube_north_west_mirrored":()=>mySwitch["block/cube"](),
         "block/cube_all":async()=>{
             const all = await getMaterial(model.textures.all);
             return new THREE.Mesh(new THREE.BoxGeometry(), all);
@@ -175,6 +184,15 @@ async function getBlockMesh(name,state) {
             var materials = [side, side, top, top, front, side];
             return new THREE.Mesh(new THREE.BoxGeometry(), materials);
         },
+        "block/cube_top":async()=>{
+            const side = await getMaterial(model.textures.side);
+            const top = await getMaterial(model.textures.top);
+            var materials = [side, side, top, side, side, side];
+            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+        },
+        "block/mangrove_roots":()=>mySwitch["block/cube_top"](),
+
+
         "block/slime_block":async()=>{
             const texture = await getMaterial(model.textures.texture);
             const geometry = BufferGeometryUtils.mergeGeometries([new THREE.BoxGeometry(10/16,10/16,10/16),new THREE.BoxGeometry()]);
@@ -192,8 +210,41 @@ async function getBlockMesh(name,state) {
             ];
             return new THREE.Mesh(geometry,[down,up,side]);
         },
+        "block/crafting_table":async()=>{
+            const down = await getMaterial(model.textures.down);
+            const side = await getMaterial(model.textures.east);
+            const front = await getMaterial(model.textures.north);
+            const top = await getMaterial(model.textures.up);
+            var materials = [side, front, top, down, front, side];
+            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+        },
+        "block/cartography_table":async()=>{
+            const down = await getMaterial(model.textures.down);
+            const side1 = await getMaterial(model.textures.south);
+            const side2 = await getMaterial(model.textures.west);
+            const side3 = await getMaterial(model.textures.east);
+            const top = await getMaterial(model.textures.up);
+            var materials = [side3, side2, top, down, side3, side1];
+            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+        },
+        "block/fletching_table":async()=>{
+            const down = await getMaterial(model.textures.down);
+            const side = await getMaterial(model.textures.east);
+            const front = await getMaterial(model.textures.north);
+            const top = await getMaterial(model.textures.up);
+            var materials = [side, side, top, down, front, front];
+            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+        },
+        "block/smithing_table":()=>mySwitch["block/fletching_table"](),// smithing table is identical to fletching table.
+        "block/dried_kelp_block":async()=>{
+            const up = await getMaterial(model.textures.up);
+            const down = await getMaterial(model.textures.down);
+            const side = await getMaterial(model.textures.north);
+            var materials = [side, side, up, down, side, side];
+            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+        },
         "any":async()=>{
-            
+
         }
     }
     return mySwitch[model.path[0]]();
@@ -231,16 +282,18 @@ function setupWebsocket() {
     ws.onmessage = (e)=>{
         var msg = JSON.parse(e.data);
         if (msg.type == "connection") {
-            turtles[msg.index]={"name":msg.name,pos:[0,0,0],d:3,worldData:[],busy:false};
-            if (turtleId==undefined) {
-                setScene(msg.index)
-            }
+            turtles[msg.index]=msg.data;
+            turtles[msg.index].busy=false;
+            if (turtleId==undefined) setScene(msg.index)
         } else if (msg.type == "disconnection") {
             delete turtles[msg.index];
             if (turtleId==msg.index) {turtleId=undefined;scene.clear();}
             
         } else if (msg.type == "return") {
             if (callbacks[msg.id]!=null) callbacks[msg.id](msg.return.map((el)=>el.split("|").join(":")));
+        } else if (msg.type == "return") {
+            scene.clear();
+            turtles=[];
         }
     }
 }
@@ -255,6 +308,9 @@ async function sendAsync(command) {
     return new Promise((resolve)=>{
         send(command,resolve);
     });
+}
+function saveState() {
+    ws.send(JSON.stringify({"type":"save","index":turtleId,data:turtles[turtleId]}));
 }
 //#endregion websocket
 
@@ -302,9 +358,10 @@ async function setScene(index) {
         if (child instanceof THREE.Mesh) { child.material = TurtleMat; }
     });
     object.name = "turtle" + index;
+    object.position.set(...turtles[turtleId].pos);
     scene.add(object);
     sceneData.turtle.model = object;
-    turtle.update();
+    camera.position.set(...vec3Add(turtle.getPos(),[-2.8868,2.8868,2.8868]));
     turtle.cameraFocus();
     Object.entries(turtles[turtleId].worldData).forEach(([x,worldDataX])=>{
         if (worldDataX==null)return;
@@ -321,15 +378,15 @@ async function setScene(index) {
 async function setBlock(pos,name,state) {
     const [x,y,z] = pos;
     const worldData = turtles[turtleId].worldData;
-    if (worldData[x]==null)worldData[x]=[];
-    if (worldData[x][y]==null)worldData[x][y]=[];
+    if (worldData[x]==null)worldData[x]={};
+    if (worldData[x][y]==null)worldData[x][y]={};
     if (worldData[x][y][z]==null)worldData[x][y][z]={name,state};
     turtles[turtleId].worldData=worldData;
     const worldModels = sceneData.worldData;
     if (worldModels[x]==null)worldModels[x]=[];
     if (worldModels[x][y]==null)worldModels[x][y]=[];
-    if (worldModels[x][y][z]!=null) scene.remove(worldModels[x][y][z]);
     var cube = await getBlockMesh(name,state);
+    if (worldModels[x][y][z]!=null) scene.remove(worldModels[x][y][z]);
     cube.position.set(...pos);
     scene.add(cube);
     worldModels[x][y][z]=cube;
@@ -356,12 +413,13 @@ async function detect(recursive) {
         }
         await turtle.actions.turnRight(true);
     }
+    saveState();
     if (recursive!==true) turtle.setBusy(false);
 }
 const turtle = window.turtle = {//window.turtle make is accessable from the console
     "get":()=>{ return turtles[turtleId]; },
     "isBusy":()=>{ return turtles[turtleId].busy; },
-    "setBusy":(value,line)=>{ turtles[turtleId].busy=value; },
+    "setBusy":(value)=>{ turtles[turtleId].busy=value; },
 
     "getPos":()=>{ return turtles[turtleId].pos; },
     "getRot":()=>{ return turtles[turtleId].d; },
@@ -378,7 +436,6 @@ const turtle = window.turtle = {//window.turtle make is accessable from the cons
     "setRot":(d)=>{ turtles[turtleId].d=d;turtle.updateRot(); },
     "cameraFocus":()=>{
         const turtlePos=turtles[turtleId].pos;
-        camera.position.set(...vec3Add(turtlePos,[-2.8868,2.8868,2.8868]));
         controls.target.set(...turtlePos); controls.update();
     },
     "updatePos":()=>{ sceneData.turtle.model.position.set(...turtles[turtleId].pos); },

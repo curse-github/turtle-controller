@@ -68,7 +68,8 @@ server.on('request', fileGetter);
 
 // websocket server for the tutles to connect to
 const ws = new WebSocket.Server({server});
-var turtles:{socket:WebSocket,name:string}[] = [];
+type block = {name:string,state:{[key:string]:any}};
+var turtles:{socket:WebSocket,data:{name:string,pos:[number,number,number],d:0|1|2|3,busy:boolean,worldData:{[key:string]:{[key:string]:{[key:string]:block}}}}}[] = [];
 var pings:any[] = [];
 function send(index:number,cmd:string) {
     if (turtles[index]!=null)turtles[index].socket.send(cmd);
@@ -84,7 +85,7 @@ function ping() {
         for (let i = 0; i < pings.length; i++) {
             if (pings[i]!=true) {
                 if(turtles[i].socket!=null&&turtles[i].socket.readyState==WebSocket.OPEN) turtles[i].socket.close();
-                console.log(Colors.Fgre+"\""+turtles[i].name+"\""+Colors.Fgra+" disconnected."+Colors.R);
+                console.log(Colors.Fgre+"\""+turtles[i].data.name+"\""+Colors.Fgra+" disconnected."+Colors.R);
                 if (browserWS) browserWS.send(JSON.stringify({"type":"disconnection","index":i}));
                 delete turtles[i];
             }
@@ -105,18 +106,18 @@ ws.on("connection",(websocket:WebSocket)=>{
             if (msg.connection=="turtle") {
                 for (let i:number = 0; i < turtles.length+1; i++) {
                     if (turtles[i]==null) {
-                        turtles[i]={"socket":websocket,"name":"turtle"+i.toString()};
-                        console.log(Colors.Fgre+"\""+turtles[i].name+"\""+Colors.Fgra+" connected."+Colors.R);
-                        send(i,JSON.stringify({"type":"lua","id":"setNameServer","cmd":"os.setComputerLabel(\""+turtles[i].name+"\")"}));
-                        if (browserWS!=null) browserWS.send(JSON.stringify({"type":"connection","index":i,"name":turtles[i].name}));
+                        turtles[i]={"socket":websocket,data:{"name":"turtle"+i.toString(),pos:[0,0,0],d:3,busy:false,worldData:{}}};
+                        console.log(Colors.Fgre+"\""+turtles[i].data.name+"\""+Colors.Fgra+" connected."+Colors.R);
+                        send(i,JSON.stringify({"type":"lua","id":"setNameServer","cmd":"os.setComputerLabel(\""+turtles[i].data.name+"\")"}));
+                        if (browserWS!=null) browserWS.send(JSON.stringify({"type":"connection","index":i,"data":turtles[i].data}));
                         break;
                     }
                 }
             } else if (msg.connection=="browser") {
-                if (browserWS!=null) { browserWS.send(JSON.stringify({"type":""}));browserWS.close(); }
+                if (browserWS!=null) { browserWS.send(JSON.stringify({"type":"end"}));browserWS.close(); }
                 browserWS=websocket;
                 for (let i = 0; i < turtles.length; i++) {
-                    if(turtles[i]!=null) browserWS.send(JSON.stringify({"type":"connection","index":i,"name":turtles[i].name}));
+                    if (turtles[i]!=null) browserWS.send(JSON.stringify({"type":"connection","index":i,"data":turtles[i].data}));
                 }
             }
         } else if (msg.type == "lua") {
@@ -126,7 +127,9 @@ ws.on("connection",(websocket:WebSocket)=>{
 			if (browserWS!=null) browserWS.send(JSON.stringify(msg));
 		} else if (msg.type == "pong") {
             pings[msg.id]=true;
-		}
+		} else if (msg.type == "save") {
+            turtles[msg.index].data = msg.data;
+        }
     });
 });
 server.listen(turtlePort,()=>{
