@@ -1,8 +1,8 @@
 /*
 TODO:
-    orienting blocks
     switch turtles
     color leaf textures
+    procedural rendering
     render mushroom block
 */
 
@@ -74,16 +74,22 @@ async function getModelRecursive(name) {
     modelCache[tmp]=model;
     return model;
 }
-var materialCache = {};
-async function getMaterial(name,opacity) {
+var textureCache = {};
+async function getMaterial(name,rotation,offset) {
     var tmp;
     tmp=name.includes(":")?name.split(":")[1]:name;//removes "minecraft:" from the beginning if needed
-    if (materialCache[tmp]!=null) return materialCache[tmp];//returns a cached model
-    var texture = new THREE.TextureLoader().load("/textures/"+tmp+".png");
-    var material = await new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity:opacity||1 });
-    material.map.magFilter = THREE.NearestFilter;// makes pixels not blurry
+    var texture;
+    if (textureCache[tmp]!=null) texture=textureCache[tmp].clone();//returns a cached model
+    else {
+        var textureTmp = new THREE.TextureLoader().load("/textures/"+tmp+".png");
+        textureTmp.magFilter = THREE.NearestFilter;// makes pixels not blurry
+        textureCache[tmp]=textureTmp;
+        texture=textureTmp.clone();
+    }
+    var material = await new THREE.MeshBasicMaterial({ map: texture, transparent: true });
     material.toneMapped=false;
-    materialCache[tmp]=material;
+    if (offset!=null) material.map.offset={x:offset[0],y:offset[1]};
+    if (rotation!=null) material.map.rotation=-rotation;
     return material;
 }
 const SupportedModelTypes = [
@@ -143,7 +149,7 @@ async function getBlockMesh(name,state) {
         "block/cube_north_west_mirrored":()=>mySwitch["block/cube"](),
         "block/cube_all":async()=>{
             const all = await getMaterial(model.textures.all);
-            return new THREE.Mesh(new THREE.BoxGeometry(), all);
+            return new THREE.Mesh(new THREE.BoxGeometry(), [all, all, all, all, all, all]);
         },
         "block/cube_mirrored_all":()=>mySwitch["block/cube_all"](),
         "block/cube_north_west_mirrored_all":()=>mySwitch["block/cube_all"](),
@@ -157,17 +163,18 @@ async function getBlockMesh(name,state) {
         },
         "block/grass_block":()=>mySwitch["block/cube_bottom_top"](),
         "block/cube_column":async()=>{
-            const end = await getMaterial(model.textures.end);
+            const end = await getMaterial(model.textures.end,Math.PI/2,[1,0]);
             const side = await getMaterial(model.textures.side);
             var materials = [side, side, end, end, side, side];
             return new THREE.Mesh(new THREE.BoxGeometry(), materials);
         },
         "block/cube_column_mirrored":()=>mySwitch["block/cube_column"](),
         "block/cube_column_horizontal":async()=>{
-            const end = await getMaterial(model.textures.end);
-            const side = await getMaterial(model.textures.side);
+            const end = await getMaterial(model.textures.end,Math.PI,[1,1]);
+            const side = await getMaterial(model.textures.side,Math.PI/2,[1,0]);
             var materials = [end, end, side, side, side, side];
-            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+            var mesh = new THREE.Mesh(new THREE.BoxGeometry(), materials);
+            return mesh;
         },
         "block/orientable":async()=>{
             const top = await getMaterial(model.textures.top);
@@ -175,7 +182,8 @@ async function getBlockMesh(name,state) {
             const front = await getMaterial(model.textures.front);
             const side = await getMaterial(model.textures.side);
             var materials = [side, side, top, bottom, front, side];
-            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
+            var mesh =  new THREE.Mesh(new THREE.BoxGeometry(), materials);
+            return mesh;
         },
         "block/orientable_with_bottom":async()=>{
             const top = await getMaterial(model.textures.top);
@@ -247,7 +255,11 @@ async function getBlockMesh(name,state) {
 
         }
     }
-    return mySwitch[model.path[0]]();
+    var mesh = await mySwitch[model.path[0]]();
+    if (variant.x!=null) mesh.rotation.x+=variant.x/180*Math.PI;
+    if (variant.y!=null) mesh.rotation.y+=variant.y/180*Math.PI;
+    if (variant.z!=null) mesh.rotation.z+=variant.z/180*Math.PI;
+    return mesh;
 }
 //#endregion helpers
 
@@ -380,18 +392,23 @@ async function setBlock(pos,name,state) {
     const worldData = turtles[turtleId].worldData;
     if (worldData[x]==null)worldData[x]={};
     if (worldData[x][y]==null)worldData[x][y]={};
-    if (worldData[x][y][z]==null)worldData[x][y][z]={name,state};
-    turtles[turtleId].worldData=worldData;
     const worldModels = sceneData.worldData;
     if (worldModels[x]==null)worldModels[x]=[];
     if (worldModels[x][y]==null)worldModels[x][y]=[];
-    var cube = await getBlockMesh(name,state);
-    if (worldModels[x][y][z]!=null) scene.remove(worldModels[x][y][z]);
-    cube.position.set(...pos);
-    scene.add(cube);
-    worldModels[x][y][z]=cube;
+    if (name!=null&&state!=null) {
+        var cube = await getBlockMesh(name,state);
+        if (worldModels[x][y][z]!=null) scene.remove(worldModels[x][y][z]);
+        cube.position.set(...pos);
+        scene.add(cube);
+        worldData[x][y][z]={name,state};
+        worldModels[x][y][z]=cube;
+    } else {
+        if (worldModels[x][y][z]!=null) scene.remove(worldModels[x][y][z]);
+        worldData[x][y][z]=null;
+        worldModels[x][y][z]=null;
+    }
+    turtles[turtleId].worldData=worldData;
     sceneData.worldData=worldModels;
-
 }
 //#endregion threejs
 
@@ -407,10 +424,9 @@ async function detect(recursive) {
     //detect in each direction and set blocks if needed
     for (let i = 0; i < 4; i++) {
         const output = await turtle.actions.inspect();
-        if (output!=null) {
-            const pos=vec3Add(turtle.getPos(),turtle.getForward())
-            setBlock(pos,output.name,output.state);
-        }
+        const pos=vec3Add(turtle.getPos(),turtle.getForward())
+        if (output!=null) setBlock(pos,output.name,output.state);
+        else setBlock(pos,null,null);
         await turtle.actions.turnRight(true);
     }
     saveState();
