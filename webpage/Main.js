@@ -1,6 +1,5 @@
 /*
 TODO:
-    color leaf textures
     procedural rendering
     render multipart blocks
 */
