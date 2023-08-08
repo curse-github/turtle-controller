@@ -1,9 +1,8 @@
 /*
 TODO:
-    switch turtles
     color leaf textures
     procedural rendering
-    render mushroom block
+    render multipart blocks
 */
 
 
@@ -292,11 +291,15 @@ function setupWebsocket() {
     ws.onopen = ()=>ws.send(JSON.stringify({"type":"connection","connection":"browser"}));
     ws.onerror = (err)=>console.log("WebSocket error: "+err);
     ws.onmessage = (e)=>{
+        const turtleSelect = document.getElementById("turtleSelect");
         var msg = JSON.parse(e.data);
         if (msg.type == "connection") {
             turtles[msg.index]=msg.data;
             turtles[msg.index].busy=false;
-            if (turtleId==undefined) setScene(msg.index)
+            if (turtleId==undefined) setScene(msg.index);
+            var option = document.createElement("option");
+            option.value=option.innerText=turtles[msg.index].name;
+            turtleSelect.appendChild(option);
         } else if (msg.type == "disconnection") {
             delete turtles[msg.index];
             if (turtleId==msg.index) {turtleId=undefined;scene.clear();}
@@ -387,6 +390,17 @@ async function setScene(index) {
     });
     detect();
 }
+async function updateScene() {
+    const turtleSelect = document.getElementById("turtleSelect");
+    var value = turtleSelect.value;
+    for (let i = 0; i < turtles.length; i++) {
+        if (turtles[i].name==value) {
+            if (!turtle.isBusy())setScene(i);//will only switch to another turtle when one is done being used
+            else onNotBusy=()=>{setScene(i);};
+            break;
+        }
+    }
+}
 async function setBlock(pos,name,state) {
     const [x,y,z] = pos;
     const worldData = turtles[turtleId].worldData;
@@ -432,10 +446,11 @@ async function detect(recursive) {
     saveState();
     if (recursive!==true) turtle.setBusy(false);
 }
+var onNotBusy;
 const turtle = window.turtle = {//window.turtle make is accessable from the console
     "get":()=>{ return turtles[turtleId]; },
     "isBusy":()=>{ return turtles[turtleId].busy; },
-    "setBusy":(value)=>{ turtles[turtleId].busy=value; },
+    "setBusy":(value)=>{ turtles[turtleId].busy=value;if(value==false&&onNotBusy!=null){onNotBusy();onNotBusy=null;} },
 
     "getPos":()=>{ return turtles[turtleId].pos; },
     "getRot":()=>{ return turtles[turtleId].d; },
@@ -546,4 +561,6 @@ function setupButtons() {
         const element = document.getElementById(key);
         if (element) element.addEventListener("click",value);
     }
+    const turtleSelect = document.getElementById("turtleSelect");
+    turtleSelect.onchange=updateScene;
 }
