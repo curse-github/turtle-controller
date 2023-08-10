@@ -1,6 +1,5 @@
 /*
 TODO:
-    handle rotated model "elements"
     handle animated textures
     better controls
 */
@@ -32,6 +31,9 @@ function vec3Sub(a,b) {
 }
 function vec3Div(a,b) {
     return [a[0]/b,a[1]/b,a[2]/b];
+}
+function vec3Mul(a,b) {
+    return [a[0]*b,a[1]*b,a[2]*b];
 }
 async function objLoadAsync(model) {
     var loader = new OBJLoader();
@@ -119,7 +121,13 @@ async function variantToMesh(variant) {//generates a threejs mesh from a mincraf
     for (let i = 0; i < model.elements.length; i++) {
         const element = model.elements[i];
         const newGeometry = new THREE.BoxGeometry(...vec3Div(vec3Sub(element.to,element.from),16));
+        if (element.rotation!=null) {
+            if (element.rotation.axis=="x") {newGeometry.rotateX(element.rotation.angle/180*Math.PI);var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(1,multiplier,multiplier);}
+            if (element.rotation.axis=="y") {newGeometry.rotateY(element.rotation.angle/180*Math.PI);var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(multiplier,1,multiplier);}
+            if (element.rotation.axis=="z") {newGeometry.rotateZ(element.rotation.angle/180*Math.PI);var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(multiplier,multiplier,1);}
+        }
         newGeometry.translate(...vec3Div(vec3Sub(element.from,vec3Sub([8,8,8],vec3Div(vec3Sub(element.to,element.from),2))),16))// ( from-( 8-( ( to-from )/2 ) ) )/16
+
         const loadOrder = ["east","west","up","down","north","south"];
         for (let j = 0; j < loadOrder.length; j++) {
             const face = element.faces[loadOrder[j]];
