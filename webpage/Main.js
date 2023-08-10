@@ -1,8 +1,8 @@
 /*
 TODO:
     handle rotated model "elements"
-    render multipart blocks
     handle animated textures
+    better controls
 */
 
 
@@ -49,20 +49,19 @@ async function fetchJsonAsync(url,input) {
         });
     });
 }
+
+//#region minecraft data getters
 async function getBlockstate(name) {
     var tmp;
     tmp=name.includes(":")?name.split(":")[1]:name;//removes "minecraft:" from the beginning if needed
     return fetchJsonAsync("/blockstates/"+tmp+".json");
-}
-async function getModel(name) {
-    return fetchJsonAsync("/models/"+name+".json");
 }
 var modelCache=window.modelCache={};
 async function getModelRecursive(name) {
     var tmp;
     tmp=name.includes(":")?name.split(":")[1]:name;//removes "minecraft:" from the beginning if needed
     if (modelCache[tmp]!=null) return modelCache[tmp];//returns a cached model
-    const model = await getModel(tmp);
+    const model = await fetchJsonAsync("/models/"+tmp+".json");
     //model.path=[tmp];
     if (model.parent!=null&&model.parent!="builtin/generated") {
         var parentModel = await getModelRecursive(model.parent);
@@ -97,26 +96,11 @@ async function getMaterial(name,rotation,offset) {
     if (rotation!=null) material.map.rotation=-rotation;
     return material;
 }
-async function getBlockMesh(name,state) {
-    var blockstate = await getBlockstate(name);
-    if (blockstate.multipart!=null){console.log("\""+name+"\"","multipart!");return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);}
-    if (blockstate.variants==null)return;
-    var variantKey = Object.keys(blockstate.variants)[0];//first key of the variants
-    var variant;
-    if (Object.keys(blockstate.variants).length>1) {//if there is more than one variant
-        //get keys of blockstate, filter only ones used to get variant, sort alphebetically, map each key to its value, and finally join on commas.
-        //gives you something like "face=floor,facing=west,powered=false"
-        const states=Object.keys(state).filter((key)=>variantKey.includes(key)).sort().map((key)=>key+"="+state[key]).join(",");
-        variant=blockstate.variants[states];
-    } else {
-        variant=blockstate.variants[variantKey];//return only variant
-    }
-    if ((typeof variant)=="object" && Array.isArray(variant)) variant = variant[Math.ceil(Math.random()*variant.length)-1];//pick random variant
-    if (variant==null||variant.model==null) return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);
+async function variantToMesh(variant) {//generates a threejs mesh from a mincraft "variant" object
+    if (variant.model==null) return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);
     const model = await getModelRecursive(variant.model);
     if (model.elements==null||model.elements.length==0) return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);
 
-    //generate goemetry from model
     var geometry;
     var groups = [];
     var materials = [null];
@@ -167,10 +151,69 @@ async function getBlockMesh(name,state) {
     var mesh = new THREE.Mesh(geometry, materials);
 
     if (variant.x!=null) mesh.rotation.x+=variant.x/180*Math.PI;
-    if (variant.y!=null) mesh.rotation.y+=variant.y/180*Math.PI;
+    if (variant.y!=null) mesh.rotation.y+=-variant.y/180*Math.PI;
     if (variant.z!=null) mesh.rotation.z+=variant.z/180*Math.PI;
     return mesh;
 }
+async function getBlockMesh(name,state) {
+    var blockstate = await getBlockstate(name);
+    if (blockstate.variants!=null) {
+        var variantKey = Object.keys(blockstate.variants)[0];//first key of the variants
+        var variant;
+        if (Object.keys(blockstate.variants).length>1) {//if there is more than one variant
+            //get keys of blockstate, filter only ones used to get variant, sort alphebetically, map each key to its value, and finally join on commas.
+            //gives you something like "face=floor,facing=west,powered=false"
+            const states=Object.keys(state).filter((key)=>variantKey.includes(key)).sort().map((key)=>key+"="+state[key]).join(",");
+            variant=blockstate.variants[states];
+        } else {
+            variant=blockstate.variants[variantKey];//return only variant
+        }
+        if ((typeof variant)=="object" && Array.isArray(variant)) variant = variant[Math.ceil(Math.random()*variant.length)-1];//pick random variant
+        if (variant==null||variant.model==null) return [new THREE.Mesh(new THREE.BoxGeometry(), defMaterial)];
+        return [await variantToMesh(variant)];
+    } else if (blockstate.multipart!=null) {
+        //console.log("\""+name+"\"","multipart!");return [new THREE.Mesh(new THREE.BoxGeometry(), defMaterial)];
+        var meshes = [];
+        for (let i = 0; i < blockstate.multipart.length; i++) {
+            const part = blockstate.multipart[i];
+            var conditionMet=true;
+            if (part.when!=null) {
+                try {
+                    if (part.when.OR!=null) {
+                        var any = false;
+                        for (let j = 0; j < part.when.OR.length; j++) {
+                            const when = part.when.OR[j];
+                            var orConditionMet=true;
+                            const whenEntries = Object.entries(when);
+                            for (let j = 0; j < whenEntries.length; j++) {
+                                const [key,value] = whenEntries[j];
+                                if (!value.split("|").includes(state[key])&&!value.split("|").includes(state[key].toString()))orConditionMet=false;
+                            }
+                            if (orConditionMet) {any=true;break;}
+                        }
+                        if (!any)conditionMet=false;
+                    } else {
+                        const whenEntries = Object.entries(part.when);
+                        for (let j = 0; j < whenEntries.length; j++) {
+                            const [key,value] = whenEntries[j];
+                            if (!value.split("|").includes(state[key])&&!value.split("|").includes(state[key].toString()))conditionMet=false;
+                        }
+                    }
+                } catch (error) {
+                    console.log(error);
+                    console.log(name,part.when,state);
+                }
+            }
+            if (conditionMet) { var variant=part.apply;
+                if ((typeof variant)=="object" && Array.isArray(variant)) variant = variant[Math.ceil(Math.random()*variant.length)-1];//pick random variant
+                meshes.push(await variantToMesh(variant));
+            }
+        }
+        return meshes;
+    }else return [new THREE.Mesh(new THREE.BoxGeometry(), defMaterial)];
+}
+//#endregion minecraft data getters
+
 //#endregion helpers
 
 function setup() {
@@ -212,9 +255,14 @@ function setupWebsocket() {
             option.value=option.innerText=turtles[msg.index].name;
             turtleSelect.appendChild(option);
         } else if (msg.type == "disconnection") {
+            const options = turtleSelect.children
+            for (let i = 0; i < options.length; i++) {
+                const child = options[i];
+                if (child.value==turtles[msg.index].name)
+                {turtleSelect.removeChild(child);updateScene();break;}
+            }
             delete turtles[msg.index];
             if (turtleId==msg.index) {turtleId=undefined;scene.clear();}
-            
         } else if (msg.type == "return") {
             if (callbacks[msg.id]!=null) callbacks[msg.id](msg.return.map((el)=>el.split("|").join(":")));
         } else if (msg.type == "return") {
@@ -308,9 +356,11 @@ async function updateScene() {
         if (turtles[i].name==value) {
             if (!turtle.isBusy())setScene(i);//will only switch to another turtle when one is done being used
             else onNotBusy=()=>{setScene(i);};
-            break;
+            return;
         }
     }
+    //none found
+    scene.clear();
 }
 async function setBlock(pos,name,state) {
     const [x,y,z] = pos;
@@ -321,12 +371,15 @@ async function setBlock(pos,name,state) {
     if (worldModels[x]==null)worldModels[x]=[];
     if (worldModels[x][y]==null)worldModels[x][y]=[];
     if (name!=null&&state!=null) {
-        var cube = await getBlockMesh(name,state);
-        if (worldModels[x][y][z]!=null) scene.remove(worldModels[x][y][z]);
-        cube.position.set(...pos);
-        scene.add(cube);
+        const meshes = await getBlockMesh(name,state);
+        const oldMeshes = worldModels[x][y][z];if (oldMeshes!=null) for (let i = 0; i < oldMeshes.length; i++) { scene.remove(oldMeshes[i]); }
+        for (let i = 0; i < meshes.length; i++) {
+            const mesh = meshes[i];
+            mesh.position.set(...pos);
+            scene.add(mesh);
+        }
         worldData[x][y][z]={name,state};
-        worldModels[x][y][z]=cube;
+        worldModels[x][y][z]=meshes;
     } else {
         if (worldModels[x][y][z]!=null) scene.remove(worldModels[x][y][z]);
         worldData[x][y][z]=null;
@@ -388,7 +441,7 @@ const turtle = window.turtle = {//window.turtle make is accessable from the cons
             if (recursive!==true&&turtle.isBusy()) return;
             if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.turnLeft()");
-            if (out[0]=="false") return;
+            if (out[0]=="false") {turtle.setBusy(false);return;}
             turtle.setRot((turtle.getRot()+3)%4);
             if (recursive!==true) turtle.setBusy(false);
         },
@@ -396,7 +449,7 @@ const turtle = window.turtle = {//window.turtle make is accessable from the cons
             if (recursive!==true&&turtle.isBusy()) return;
             if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.turnRight()");
-            if (out[0]=="false") return;
+            if (out[0]=="false") {turtle.setBusy(false);return;}
             turtle.setRot((turtle.getRot()+1)%4);
             if (recursive!==true) turtle.setBusy(false);
         },
@@ -404,7 +457,7 @@ const turtle = window.turtle = {//window.turtle make is accessable from the cons
             if (recursive!==true&&turtle.isBusy()) return;
             if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.up()");
-            if (out[0]=="false") return;
+            if (out[0]=="false") {turtle.setBusy(false);return;}
             const pos = turtle.getPos();pos[1]++;
             turtle.setPos(pos);await detect(true);
             if (recursive!==true) turtle.setBusy(false);
@@ -413,7 +466,7 @@ const turtle = window.turtle = {//window.turtle make is accessable from the cons
             if (recursive!==true&&turtle.isBusy()) return;
             if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.down()");
-            if (out[0]=="false") return;
+            if (out[0]=="false") {turtle.setBusy(false);return;}
             const pos = turtle.getPos();pos[1]--;
             turtle.setPos(pos);await detect(true);
             if (recursive!==true) turtle.setBusy(false);
@@ -422,7 +475,7 @@ const turtle = window.turtle = {//window.turtle make is accessable from the cons
             if (recursive!==true&&turtle.isBusy()) return;
             if (recursive!==true) turtle.setBusy(true);
             const out = await sendAsync("turtle.forward()");
-            if (out[0]=="false") return;
+            if (out[0]=="false") {turtle.setBusy(false);return;}
             const pos=vec3Add(turtle.getPos(),turtle.getForward())
             turtle.setPos(pos);await detect(true);
             if (recursive!==true) turtle.setBusy(false);
