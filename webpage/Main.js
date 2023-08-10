@@ -1,7 +1,8 @@
 /*
 TODO:
-    procedural rendering
+    handle rotated model "elements"
     render multipart blocks
+    handle animated textures
 */
 
 
@@ -25,6 +26,12 @@ function threeVec2vec3(threeVec3) {
 }
 function vec3Add(a,b) {
     return [a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+}
+function vec3Sub(a,b) {
+    return [a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+}
+function vec3Div(a,b) {
+    return [a[0]/b,a[1]/b,a[2]/b];
 }
 async function objLoadAsync(model) {
     var loader = new OBJLoader();
@@ -56,7 +63,7 @@ async function getModelRecursive(name) {
     tmp=name.includes(":")?name.split(":")[1]:name;//removes "minecraft:" from the beginning if needed
     if (modelCache[tmp]!=null) return modelCache[tmp];//returns a cached model
     const model = await getModel(tmp);
-    model.path=[tmp];
+    //model.path=[tmp];
     if (model.parent!=null&&model.parent!="builtin/generated") {
         var parentModel = await getModelRecursive(model.parent);
         //element from higher layer replace lower
@@ -67,7 +74,7 @@ async function getModelRecursive(name) {
         if (parentModel.parent!=null) model.parent=parentModel.parent; else delete model.parent;
         if (parentModel.textures!=null)model.textures={...parentModel.textures,...model.textures};
         if (parentModel.base!=null)model.base=parentModel.base;
-        model.path=[...parentModel.path,...model.path];
+        //model.path=[...parentModel.path,...model.path];
     }
     modelCache[tmp]=model;
     return model;
@@ -84,40 +91,12 @@ async function getMaterial(name,rotation,offset) {
         textureCache[tmp]=textureTmp;
         texture=textureTmp.clone();
     }
-    var material = await new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+    var material = await new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest:0.125 });
     material.toneMapped=false;
     if (offset!=null) material.map.offset={x:offset[0],y:offset[1]};
     if (rotation!=null) material.map.rotation=-rotation;
     return material;
 }
-const SupportedModelTypes = [
-    "block/block",
-    "block/cube",
-    "block/cube_mirrored",
-    "block/cube_north_west_mirrored",
-
-    "block/grass_block",
-    "block/cube_all",
-    "block/cube_mirrored_all",
-    "block/cube_north_west_mirrored_all",
-    "block/leaves",
-    "block/cube_bottom_top",
-    "block/cube_column",
-    "block/cube_column_mirrored",
-    "block/cube_column_horizontal",
-    "block/cube_mirrored",
-    "block/orientable_with_bottom",
-    "block/cube_top",
-    "block/mangrove_roots",
-
-    "block/slime_block",
-    "block/honey_block",
-    "block/crafting_table",
-    "block/cartography_table",
-    "block/fletching_table",
-    "block/smithing_table",
-    "block/dried_kelp_block"
-]
 async function getBlockMesh(name,state) {
     var blockstate = await getBlockstate(name);
     if (blockstate.multipart!=null){console.log("\""+name+"\"","multipart!");return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);}
@@ -135,125 +114,58 @@ async function getBlockMesh(name,state) {
     if ((typeof variant)=="object" && Array.isArray(variant)) variant = variant[Math.ceil(Math.random()*variant.length)-1];//pick random variant
     if (variant==null||variant.model==null) return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);
     const model = await getModelRecursive(variant.model);
-    if (!SupportedModelTypes.includes(model.path[0])) { console.log("unsupported model type: \""+model.path[0]+"\"");console.log(model);return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial); }
-    const mySwitch = {//materials list is [left, right, top, bottom, front, back] or [east, west, top, bottom, north, south]
-        "block/block":async()=>{
-            if (!SupportedModelTypes.includes(model.path[1])) { console.log("unsupported model type: \""+model.path[1]+"\"");console.log(model);return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial); }
-            model.path.shift();
-            return mySwitch[model.path[0]]();
-        },
-        "block/cube":()=>mySwitch["block/block"](),
-        "block/cube_mirrored":()=>mySwitch["block/cube"](),
-        "block/cube_north_west_mirrored":()=>mySwitch["block/cube"](),
-        "block/cube_all":async()=>{
-            const all = await getMaterial(model.textures.all);
-            return new THREE.Mesh(new THREE.BoxGeometry(), [all, all, all, all, all, all]);
-        },
-        "block/cube_mirrored_all":()=>mySwitch["block/cube_all"](),
-        "block/cube_north_west_mirrored_all":()=>mySwitch["block/cube_all"](),
-        "block/leaves":()=>mySwitch["block/cube_all"](),
-        "block/cube_bottom_top":async()=>{
-            const top = await getMaterial(model.textures.top);
-            const bottom = await getMaterial(model.textures.bottom);
-            const side = await getMaterial(model.textures.side);
-            var materials = [side, side, top, bottom, side, side];
-            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
-        },
-        "block/grass_block":()=>mySwitch["block/cube_bottom_top"](),
-        "block/cube_column":async()=>{
-            const end = await getMaterial(model.textures.end,Math.PI/2,[1,0]);
-            const side = await getMaterial(model.textures.side);
-            var materials = [side, side, end, end, side, side];
-            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
-        },
-        "block/cube_column_mirrored":()=>mySwitch["block/cube_column"](),
-        "block/cube_column_horizontal":async()=>{
-            const end = await getMaterial(model.textures.end,Math.PI,[1,1]);
-            const side = await getMaterial(model.textures.side,Math.PI/2,[1,0]);
-            var materials = [end, end, side, side, side, side];
-            var mesh = new THREE.Mesh(new THREE.BoxGeometry(), materials);
-            return mesh;
-        },
-        "block/orientable":async()=>{
-            const top = await getMaterial(model.textures.top);
-            const bottom = await getMaterial(model.textures.bottom);
-            const front = await getMaterial(model.textures.front);
-            const side = await getMaterial(model.textures.side);
-            var materials = [side, side, top, bottom, front, side];
-            var mesh =  new THREE.Mesh(new THREE.BoxGeometry(), materials);
-            return mesh;
-        },
-        "block/orientable_with_bottom":async()=>{
-            const top = await getMaterial(model.textures.top);
-            const front = await getMaterial(model.textures.front);
-            const side = await getMaterial(model.textures.side);
-            var materials = [side, side, top, top, front, side];
-            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
-        },
-        "block/cube_top":async()=>{
-            const side = await getMaterial(model.textures.side);
-            const top = await getMaterial(model.textures.top);
-            var materials = [side, side, top, side, side, side];
-            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
-        },
-        "block/mangrove_roots":()=>mySwitch["block/cube_top"](),
+    if (model.elements==null||model.elements.length==0) return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);
 
+    //generate goemetry from model
+    var geometry;
+    var groups = [];
+    var materials = [null];
+    var materialNames = [null];
+    var uvs = [];
 
-        "block/slime_block":async()=>{
-            const texture = await getMaterial(model.textures.texture);
-            const geometry = BufferGeometryUtils.mergeGeometries([new THREE.BoxGeometry(10/16,10/16,10/16),new THREE.BoxGeometry()]);
-            return new THREE.Mesh(geometry,texture);
-        },
-        "block/honey_block":async()=>{
-            const down = await getMaterial(model.textures.down);
-            const up = await getMaterial(model.textures.up);
-            const side = await getMaterial(model.textures.side);
-            const geometry = BufferGeometryUtils.mergeGeometries([new THREE.BoxGeometry(14/16,14/16,14/16),new THREE.BoxGeometry()]);
-            geometry.groups = [
-                {start:0 ,count:6*6,materialIndex:0 },{start:36,count:12,materialIndex:2 },
-                {start:48,count:6,materialIndex:1 },{start:54,count:6,materialIndex:0 },
-                {start:60,count:12,materialIndex:2}
-            ];
-            return new THREE.Mesh(geometry,[down,up,side]);
-        },
-        "block/crafting_table":async()=>{
-            const down = await getMaterial(model.textures.down);
-            const side = await getMaterial(model.textures.east);
-            const front = await getMaterial(model.textures.north);
-            const top = await getMaterial(model.textures.up);
-            var materials = [side, front, top, down, front, side];
-            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
-        },
-        "block/cartography_table":async()=>{
-            const down = await getMaterial(model.textures.down);
-            const side1 = await getMaterial(model.textures.south);
-            const side2 = await getMaterial(model.textures.west);
-            const side3 = await getMaterial(model.textures.east);
-            const top = await getMaterial(model.textures.up);
-            var materials = [side3, side2, top, down, side3, side1];
-            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
-        },
-        "block/fletching_table":async()=>{
-            const down = await getMaterial(model.textures.down);
-            const side = await getMaterial(model.textures.east);
-            const front = await getMaterial(model.textures.north);
-            const top = await getMaterial(model.textures.up);
-            var materials = [side, side, top, down, front, front];
-            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
-        },
-        "block/smithing_table":()=>mySwitch["block/fletching_table"](),// smithing table is identical to fletching table.
-        "block/dried_kelp_block":async()=>{
-            const up = await getMaterial(model.textures.up);
-            const down = await getMaterial(model.textures.down);
-            const side = await getMaterial(model.textures.north);
-            var materials = [side, side, up, down, side, side];
-            return new THREE.Mesh(new THREE.BoxGeometry(), materials);
-        },
-        "any":async()=>{
-
-        }
+    const addMaterial = async(name)=>{
+        if (materialNames.includes(name)) return materialNames.indexOf(name);
+            //load texture and return index.
+            var nameTmp = name;
+            while(nameTmp.startsWith("#")) {nameTmp=model.textures[nameTmp.replace("#","")];}
+            materials.push(await getMaterial(nameTmp));
+            materialNames.push(name);
+            return materials.length-1;
     }
-    var mesh = await mySwitch[model.path[0]]();
+    for (let i = 0; i < model.elements.length; i++) {
+        const element = model.elements[i];
+        const newGeometry = new THREE.BoxGeometry(...vec3Div(vec3Sub(element.to,element.from),16));
+        newGeometry.translate(...vec3Div(vec3Sub(element.from,vec3Sub([8,8,8],vec3Div(vec3Sub(element.to,element.from),2))),16))// ( from-( 8-( ( to-from )/2 ) ) )/16
+        const loadOrder = ["east","west","up","down","north","south"];
+        for (let j = 0; j < loadOrder.length; j++) {
+            const face = element.faces[loadOrder[j]];
+            if (face!=null) {
+                const index=await addMaterial(face.texture);
+                groups.push({start:i*36+j*6 ,count:6,materialIndex:index });
+                //get uvs from either position or defined uv
+                var uv=face.uv;
+                if (uv==null) {//uv is not defined
+                    if (j==0||j==1) {uv=[element.from[2],16-element.to  [1],element.to[2],16-element.from[1]];}
+                    if (j==2||j==3) {uv=[element.from[0],   element.from[2],element.to[0],   element.to  [2]];}
+                    if (j==4||j==5) {uv=[element.from[0],16-element.to  [1],element.to[0],16-element.from[1]];}
+                }
+                uv=[uv[0],16-uv[1], uv[2],16-uv[3]];
+                // [0,1, 1,1,  0,0,  1,0]
+                uv=[uv[0],uv[1], uv[2],uv[1], uv[0],uv[3], uv[2],uv[3]];
+                var rotation=face.rotation||0;// [0,1,  1,1,  0,0,  1,0] -> [0,0,  0,1,  1,0,  1,1] rotate clockwise
+                for (let i = 0; i < rotation/90; i++) {
+                    uv = [uv[4],uv[5], uv[0],uv[1], uv[6],uv[7], uv[2],uv[3]];
+                }
+                uvs.push(...uv.map((val)=>val/16));
+            } else{ groups.push({start:i*36+j*6 ,count:6,materialIndex:0 });uvs.push( 0,16, 16,16,  0, 0, 16, 0) }
+        }
+        if (geometry!=null) geometry = BufferGeometryUtils.mergeGeometries([geometry,newGeometry]); else geometry = newGeometry;
+    }
+    if (geometry==null) return new THREE.Mesh(new THREE.BoxGeometry(), defMaterial);
+    geometry.groups = groups;
+    geometry.attributes.uv.set(uvs);
+    var mesh = new THREE.Mesh(geometry, materials);
+
     if (variant.x!=null) mesh.rotation.x+=variant.x/180*Math.PI;
     if (variant.y!=null) mesh.rotation.y+=variant.y/180*Math.PI;
     if (variant.z!=null) mesh.rotation.z+=variant.z/180*Math.PI;
