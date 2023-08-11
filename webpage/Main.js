@@ -1,8 +1,8 @@
 /*
 TODO:
+    custom models for chests,shulkers,signs,and banners
     better controls
 */
-
 
 import * as THREE from "/three/src/Three.js"
 window.THREE=THREE;

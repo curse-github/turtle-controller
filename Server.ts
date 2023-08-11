@@ -52,6 +52,7 @@ class Colors {
 import * as http from "http"
 import * as WebSocket from "ws";
 const express = require("express");
+import * as fs from "fs";
 
 console.clear();
 
@@ -164,7 +165,13 @@ Object.keys(pages).forEach((key) => {
 app.get("/",(req:any,res:any)=>{ res.redirect("/index.html"); });
 app.use("/three/src"     ,express.static(__dirname+"/node_modules/three/src/"  ));
 app.use("/UI"            ,express.static(__dirname+"/UI/"                      ));
-app.use("/blockstates"   ,express.static(__dirname+"/minecraft/blockstates/"   ));
+app.use("/blockstates"   ,(req:any,res:any)=>{
+    const pathname:string = req._parsedUrl.pathname.replace("/blockstates/","");
+    //will serve file from either "/minecraft/blockstates" or "/minecraft/blockstates/custom"
+    if (fs.existsSync(__dirname+"/minecraft/blockstates/"+pathname)) res.sendFile(__dirname+"/minecraft/blockstates/"+pathname);
+    else if (fs.existsSync(__dirname+"/minecraft/blockstates/custom/"+pathname)) res.sendFile(__dirname+"/minecraft/blockstates/custom/"+pathname);
+    else {res.status(404)}
+});
 app.use("/models/block"  ,express.static(__dirname+"/minecraft/models/block/"  ));
 app.use("/textures/block",express.static(__dirname+"/minecraft/textures/block/"));
 app.listen(webServerPort,()=>{ console.log(Colors.Fgra+"Web server is running at: "+Colors.Fgre+"http://localhost:"+webServerPort+Colors.R); });
