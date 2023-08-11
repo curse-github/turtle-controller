@@ -1,6 +1,5 @@
 /*
 TODO:
-    handle animated textures
     better controls
 */
 
@@ -20,7 +19,7 @@ function generateUUID() {
 		return (c === 'x' ? b : (b & 0x3 | 0x8)).toString(16);
 	});
 }
-function threeVec2vec3(threeVec3) {
+function xyzTovec3(threeVec3) {
     return [threeVec3.x,threeVec3.y,threeVec3.z];
 }
 function vec3Add(a,b) {
@@ -41,15 +40,25 @@ async function objLoadAsync(model) {
         loader.load(model, resolve);
     });
 }
-async function fetchJsonAsync(url,input) {
-    return new Promise((resolve) => {
-        fetch(url, {
-            headers: {}
-        }).then((response) => response.json())
-        .then((json)=>{
-            resolve(json,input);
-        });
+async function fetchJsonAsync(url) {
+    return new Promise((resolve)=>{
+        try {
+            fetch(url, {}).then(async (response)=>{
+                if (response==null||response.ok!=true||response.status==404) {resolve({});return;}
+                response.json().then((json)=>{
+                    resolve(json);
+                }).catch((err)=>{resolve({});});
+            }).catch((err)=>{resolve({});});
+        } catch (err) {resolve({});return;}
     });
+}
+async function waitForImage(texture) {
+    return new Promise(async (resolve)=>{
+        while(true){
+            if (texture.image!=null) resolve();
+            await new Promise(r => setTimeout(r, 100));
+        }
+    })
 }
 
 //#region minecraft data getters
@@ -81,21 +90,31 @@ async function getModelRecursive(name) {
     return model;
 }
 var textureCache = {};
-async function getMaterial(name,rotation,offset) {
+async function getMaterial(name) {
     var tmp;
     tmp=name.includes(":")?name.split(":")[1]:name;//removes "minecraft:" from the beginning if needed
     var texture;
-    if (textureCache[tmp]!=null) texture=textureCache[tmp].clone();//returns a cached model
+    if (textureCache[tmp]!=null) texture=textureCache[tmp];//returns a cached model
     else {
-        var textureTmp = new THREE.TextureLoader().load("/textures/"+tmp+".png");
+        var textureTmp = await new THREE.TextureLoader().load("/textures/"+tmp+".png");
         textureTmp.magFilter = THREE.NearestFilter;// makes pixels not blurry
+        fetchJsonAsync("/textures/"+tmp+".png.mcmeta").then(async(json)=>{
+            if (json.animation==null) return;
+            const numFrames = textureTmp.image.height/16;
+            await waitForImage(textureTmp).then(()=>{
+                const frametime=json.animation.frametime||1;
+                textureTmp.repeat.y=1/numFrames; var frame=0;
+                setInterval(() => {
+                    textureTmp.center.y=frame/(numFrames-1);
+                    frame=(frame+1)%numFrames;
+                }, frametime*50);
+            });
+        });
         textureCache[tmp]=textureTmp;
-        texture=textureTmp.clone();
+        texture=textureTmp;
     }
     var material = await new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest:0.125 });
     material.toneMapped=false;
-    if (offset!=null) material.map.offset={x:offset[0],y:offset[1]};
-    if (rotation!=null) material.map.rotation=-rotation;
     return material;
 }
 async function variantToMesh(variant) {//generates a threejs mesh from a mincraft "variant" object
@@ -122,9 +141,16 @@ async function variantToMesh(variant) {//generates a threejs mesh from a mincraf
         const element = model.elements[i];
         const newGeometry = new THREE.BoxGeometry(...vec3Div(vec3Sub(element.to,element.from),16));
         if (element.rotation!=null) {
-            if (element.rotation.axis=="x") {newGeometry.rotateX(element.rotation.angle/180*Math.PI);var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(1,multiplier,multiplier);}
-            if (element.rotation.axis=="y") {newGeometry.rotateY(element.rotation.angle/180*Math.PI);var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(multiplier,1,multiplier);}
-            if (element.rotation.axis=="z") {newGeometry.rotateZ(element.rotation.angle/180*Math.PI);var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(multiplier,multiplier,1);}
+            if (element.rotation.axis=="x") {
+                newGeometry.rotateX(element.rotation.angle/180*Math.PI);
+                if (rotation.rescale==true) {var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(1,multiplier,multiplier);}
+            } else if (element.rotation.axis=="y") {
+                newGeometry.rotateY(element.rotation.angle/180*Math.PI);var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;
+                if (rotation.rescale==true) {var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(multiplier,1,multiplier);}
+            } else if (element.rotation.axis=="z") {
+                newGeometry.rotateZ(element.rotation.angle/180*Math.PI);var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;
+                if (rotation.rescale==true) {var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(multiplier,multiplier,1);}
+            }
         }
         newGeometry.translate(...vec3Div(vec3Sub(element.from,vec3Sub([8,8,8],vec3Div(vec3Sub(element.to,element.from),2))),16))// ( from-( 8-( ( to-from )/2 ) ) )/16
 
@@ -138,8 +164,8 @@ async function variantToMesh(variant) {//generates a threejs mesh from a mincraf
                 var uv=face.uv;
                 if (uv==null) {//uv is not defined
                     if (j==0||j==1) {uv=[element.from[2],16-element.to  [1],element.to[2],16-element.from[1]];}
-                    if (j==2||j==3) {uv=[element.from[0],   element.from[2],element.to[0],   element.to  [2]];}
-                    if (j==4||j==5) {uv=[element.from[0],16-element.to  [1],element.to[0],16-element.from[1]];}
+                    else if (j==2||j==3) {uv=[element.from[0],   element.from[2],element.to[0],   element.to  [2]];}
+                    else if (j==4||j==5) {uv=[element.from[0],16-element.to  [1],element.to[0],16-element.from[1]];}
                 }
                 uv=[uv[0],16-uv[1], uv[2],16-uv[3]];
                 // [0,1, 1,1,  0,0,  1,0]
@@ -434,7 +460,7 @@ const turtle = window.turtle = {//window.turtle make is accessable from the cons
         case 0: return [0,0,-1]; case 1: return [ 1,0,0];
         case 2: return [0,0, 1]; case 3: return [-1,0,0];
     } },
-    "getCameraPos":()=>{ return threeVec2vec3(camera.position); },
+    "getCameraPos":()=>{ return xyzTovec3(camera.position); },
     "setPos":(pos)=>{ turtles[turtleId].pos=pos;turtle.updatePos(); },
     "setRot":(d)=>{ turtles[turtleId].d=d;turtle.updateRot(); },
     "cameraFocus":()=>{
