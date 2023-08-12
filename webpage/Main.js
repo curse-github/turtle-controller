@@ -1,6 +1,6 @@
 /*
 TODO:
-    custom models for chests,shulkers,signs,and banners
+    custom models for chests,shulkers,and signs
     better controls
 */
 

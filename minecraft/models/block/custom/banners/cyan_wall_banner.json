@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/custom/banners/wall_banner",
+  "textures": {
+      "texture": "minecraft:block/banners/cyan_banner_base"
+  }
+}
