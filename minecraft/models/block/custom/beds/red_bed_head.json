@@ -1,0 +1,6 @@
+{
+    "parent": "minecraft:block/custom/beds/bed_head",
+    "textures": {
+        "texture": "minecraft:block/beds/red_bed"
+    }
+}
