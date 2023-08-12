@@ -1,0 +1,30 @@
+{
+  "variants": {
+    "facing=up": {
+      "model": "minecraft:block/custom/shulkers/magenta_shulker_box"
+    },
+    "facing=down": {
+      "model": "minecraft:block/custom/shulkers/magenta_shulker_box",
+      "x":180
+    },
+    "facing=north": {
+      "model": "minecraft:block/custom/shulkers/magenta_shulker_box",
+      "x":270,
+      "z":180
+    },
+    "facing=east": {
+      "model": "minecraft:block/custom/shulkers/magenta_shulker_box",
+      "x":270,
+      "z":90
+    },
+    "facing=south": {
+      "model": "minecraft:block/custom/shulkers/magenta_shulker_box",
+      "x":270
+    },
+    "facing=west": {
+      "model": "minecraft:block/custom/shulkers/magenta_shulker_box",
+      "x":270,
+      "z":270
+    }
+  }
+}

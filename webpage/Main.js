@@ -1,6 +1,6 @@
 /*
 TODO:
-    custom models for chests,shulkers,and signs
+    custom models for chests,and signs
     better controls
 */
 
@@ -101,7 +101,7 @@ async function getMaterial(name) {
         fetchJsonAsync("/textures/"+tmp+".png.mcmeta").then(async(json)=>{
             if (json.animation==null) return;
             const numFrames = textureTmp.image.height/16;
-            await waitForImage(textureTmp).then(()=>{
+            waitForImage(textureTmp).then(()=>{
                 const frametime=json.animation.frametime||1;
                 textureTmp.repeat.y=1/numFrames; var frame=0;
                 setInterval(() => {
@@ -427,16 +427,17 @@ async function setBlock(pos,name,state) {
 async function detect(recursive) {
     if (recursive!==true&&turtle.isBusy()) return;
     if (recursive!==true) turtle.setBusy(true);
+    const turtlePos=turtle.getPos();
     //detect up and set block if needed
     const upOutput = await turtle.actions.inspectUp();
-    if (upOutput!=null) setBlock(vec3Add(turtle.getPos(),[0,1,0]),upOutput.name,upOutput.state);
+    if (upOutput!=null) setBlock(vec3Add(turtlePos,[0,1,0]),upOutput.name,upOutput.state); else setBlock(vec3Add(turtlePos,[0,1,0]),null,null);
     //detect down and set block if needed
     const downOutput = await turtle.actions.inspectDown();
-    if (downOutput!=null) setBlock(vec3Add(turtle.getPos(),[0,-1,0]),downOutput.name,downOutput.state);
+    if (downOutput!=null) setBlock(vec3Add(turtlePos,[0,-1,0]),downOutput.name,downOutput.state); else setBlock(vec3Add(turtlePos,[0,-1,0]),null,null);
     //detect in each direction and set blocks if needed
     for (let i = 0; i < 4; i++) {
         const output = await turtle.actions.inspect();
-        const pos=vec3Add(turtle.getPos(),turtle.getForward())
+        const pos=vec3Add(turtlePos,turtle.getForward())
         if (output!=null) setBlock(pos,output.name,output.state);
         else setBlock(pos,null,null);
         await turtle.actions.turnRight(true);
