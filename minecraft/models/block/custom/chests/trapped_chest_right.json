@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/custom/chests/template_chest_right",
+  "textures": {
+    "particle": "minecraft:block/oak_planks",
+    "texture": "minecraft:block/chests/trapped_right"
+  }
+}

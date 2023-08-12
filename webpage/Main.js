@@ -1,6 +1,6 @@
 /*
 TODO:
-    custom models for chests,and signs
+    custom models for signs
     better controls
 */
 

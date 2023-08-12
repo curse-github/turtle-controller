@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/custom/chests/template_chest",
+  "textures": {
+    "particle": "minecraft:block/obsidian",
+    "texture": "minecraft:block/chests/ender"
+  }
+}
