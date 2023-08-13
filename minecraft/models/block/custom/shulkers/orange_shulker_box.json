@@ -1,6 +1,6 @@
 {
   "parent": "minecraft:block/custom/shulkers/template_shulker_box",
   "textures": {
-      "texture": "minecraft:block/shulkers/shulker_orange"
+    "texture": "minecraft:block/shulkers/shulker_orange"
   }
 }

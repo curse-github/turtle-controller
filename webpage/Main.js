@@ -434,13 +434,13 @@ async function detect(recursive) {
     const downOutput = await turtle.actions.inspectDown();
     if (downOutput!=null) setBlock(vec3Add(turtlePos,[0,-1,0]),downOutput.name,downOutput.state); else setBlock(vec3Add(turtlePos,[0,-1,0]),null,null);
     //detect in each direction and set blocks if needed
-    for (let i = 0; i < 4; i++) {
+    /*for (let i = 0; i < 4; i++) {
         const output = await turtle.actions.inspect();
         const pos=vec3Add(turtlePos,turtle.getForward())
         if (output!=null) setBlock(pos,output.name,output.state);
         else setBlock(pos,null,null);
         await turtle.actions.turnRight(true);
-    }
+    }*/
     saveState();
     if (recursive!==true) turtle.setBusy(false);
 }

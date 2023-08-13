@@ -1,6 +1,6 @@
 {
-  "parent": "minecraft:block/custom/banners/banner",
+  "parent": "minecraft:block/custom/banners/template_banner",
   "textures": {
-      "texture": "minecraft:block/banners/black_banner_base"
+    "texture": "minecraft:block/banners/black_banner_base"
   }
 }

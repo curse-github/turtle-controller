@@ -1,5 +1,5 @@
 {
-    "parent": "minecraft:block/custom/beds/bed_foot",
+    "parent": "minecraft:block/custom/beds/template_bed_foot",
     "textures": {
         "texture": "minecraft:block/beds/blue_bed"
     }
