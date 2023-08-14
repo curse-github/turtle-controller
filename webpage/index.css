@@ -1,3 +1,17 @@
 canvas {
     background-color: #45424e;
 }
+.red {
+    background-color: red;
+}
+.green {
+    background-color: green;
+}
+.blue {
+    background-color: blue;
+}
+
+.ml-4 { margin-left:4px; }
+.flex { display: flex; }
+.align-center { align-items: center; }
+.absolute { position: absolute; }

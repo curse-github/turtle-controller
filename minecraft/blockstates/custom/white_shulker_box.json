@@ -9,22 +9,22 @@
     },
     "facing=north": {
       "model": "minecraft:block/custom/shulkers/white_shulker_box",
-      "x":270,
+      "x":90,
       "z":180
     },
     "facing=east": {
       "model": "minecraft:block/custom/shulkers/white_shulker_box",
-      "x":270,
-      "z":90
+      "x":90,
+      "z":270
     },
     "facing=south": {
       "model": "minecraft:block/custom/shulkers/white_shulker_box",
-      "x":270
+      "x":90
     },
     "facing=west": {
       "model": "minecraft:block/custom/shulkers/white_shulker_box",
-      "x":270,
-      "z":270
+      "x":90,
+      "z":90
     }
   }
 }

@@ -5,30 +5,38 @@
         <link rel="icon" type="image/png" href="/favicon.png">
     </head>
     <body>
-        <select id="turtleSelect" onChange=""></select><br>
-        <button id="turnLeft" >turnLeft </button><br>
-        <button id="turnRight">turnRight</button><br>
-        <br>
-        <button id="up"     >up     </button><br>
-        <button id="down"   >down   </button><br>
-        <button id="forward">forward</button><br>
-        <button id="back"   >back   </button><br>
-        <br>
-        <button id="dig"    >dig    </button>
-        <button id="digUp"  >digUp  </button>
-        <button id="digDown">digDown</button><br>
-        <button id="place"    >place    </button>
-        <button id="placeUp"  >placeUp  </button>
-        <button id="placeDown">placeDown</button><br>
-        <button id="suck"    >suck    </button>
-        <button id="suckUp"  >suckUp  </button>
-        <button id="suckDown">suckDown</button><br>
-        <button id="drop"    >drop    </button>
-        <button id="dropUp"  >dropUp  </button>
-        <button id="dropDown">dropDown</button><br>
-        <br>
-        <button id="equipRight">equipRight</button>
-        <button id="equipLeft" >equipLeft </button><br>
-        
+        <select id="turtleSelect" onChange=""></select>
+        <div class="absolute">
+            <div class="flex align-center">
+                <div class="turnLeft">
+                    <button class="blue" id="turnLeft"  title="Turn left"   ><img src="UI/turnLeft.png"  width=32 height=32 ></button>
+                </div>
+                <div class="move ml-4">
+                    <button class="blue" id="up"        title="Move up"     ><img src="UI/up.png"        width=32 height=32 ></button>
+                    <button class="blue" id="forward"   title="Move forward"><img src="UI/forward.png"   width=32 height=32 ></button><br>
+                    <button class="blue" id="down"      title="Move down"   ><img src="UI/down.png"      width=32 height=32 ></button>
+                    <button class="blue" id="back"      title="Move back"   ><img src="UI/back.png"      width=32 height=32 ></button>
+                </div>
+                <div class="turnRight">
+                    <button class="blue ml-4" id="turnRight" title="Turn right"  ><img src="UI/turnRight.png" width=32 height=32 ></button>
+                </div>
+            </div>
+            <div>
+                <button class="green" id="place"     title="Place "    ><img src="UI/place.png"     width=32 height=32 ></button>
+                <button class="red" id="dig"     title="Dig"     ><img src="UI/dig.png"     width=32 height=32 ></button>
+                <button class="green" id="drop"     title="Drop"     ><img src="UI/drop.png"     width=32 height=32 ></button>
+                <button class="red" id="suck"     title="Suck"     ><img src="UI/suck.png"     width=32 height=32 ></button>
+                <br>
+                <button class="green" id="placeUp"   title="Place up"  ><img src="UI/placeUp.png"   width=32 height=32 ></button>
+                <button class="red" id="digUp"   title="Dig up"  ><img src="UI/digUp.png"   width=32 height=32 ></button>
+                <button class="green" id="dropUp"   title="Drop up"  ><img src="UI/dropUp.png"   width=32 height=32 ></button>
+                <button class="red" id="suckUp"   title="Suck up"  ><img src="UI/suckUp.png"   width=32 height=32 ></button>
+                <br>
+                <button class="green" id="placeDown" title="Place down"><img src="UI/placeDown.png" width=32 height=32 ></button>
+                <button class="red" id="digDown" title="Dig down"><img src="UI/digDown.png" width=32 height=32 ></button>
+                <button class="green" id="dropDown" title="Drop down"><img src="UI/dropDown.png" width=32 height=32 ></button>
+                <button class="red" id="suckDown" title="Suck down"><img src="UI/suckDown.png" width=32 height=32 ></button>
+            </div>
+        </div>
     </body>
 </html>

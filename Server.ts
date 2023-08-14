@@ -85,7 +85,7 @@ function ping() {
     setTimeout(() => {
         for (let i = 0; i < pings.length; i++) {
             if (pings[i]!=true) {
-                if(turtles[i].socket!=null&&turtles[i].socket.readyState==WebSocket.OPEN) turtles[i].socket.close();
+                if(turtles[i]!=null&&turtles[i].socket!=null&&turtles[i].socket.readyState==WebSocket.OPEN) turtles[i].socket.close();
                 console.log(Colors.Fgre+"\""+turtles[i].data.name+"\""+Colors.Fgra+" disconnected."+Colors.R);
                 if (browserWS) browserWS.send(JSON.stringify({"type":"disconnection","index":i}));
                 delete turtles[i];

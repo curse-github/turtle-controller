@@ -1,6 +1,9 @@
 /*
 TODO:
-    better controls
+    inventory manager
+Hopes:
+    remove "404 (Not Found)" error
+    fix rotated "elements"
 */
 
 import * as THREE from "/three/src/Three.js"
@@ -72,7 +75,6 @@ async function getModelRecursive(name) {
     tmp=name.includes(":")?name.split(":")[1]:name;//removes "minecraft:" from the beginning if needed
     if (modelCache[tmp]!=null) return modelCache[tmp];//returns a cached model
     const model = await fetchJsonAsync("/models/"+tmp+".json");
-    //model.path=[tmp];
     if (model.parent!=null&&model.parent!="builtin/generated") {
         var parentModel = await getModelRecursive(model.parent);
         //element from higher layer replace lower
@@ -83,7 +85,6 @@ async function getModelRecursive(name) {
         if (parentModel.parent!=null) model.parent=parentModel.parent; else delete model.parent;
         if (parentModel.textures!=null)model.textures={...parentModel.textures,...model.textures};
         if (parentModel.base!=null)model.base=parentModel.base;
-        //model.path=[...parentModel.path,...model.path];
     }
     modelCache[tmp]=model;
     return model;
@@ -99,8 +100,8 @@ async function getMaterial(name) {
         textureTmp.magFilter = THREE.NearestFilter;// makes pixels not blurry
         fetchJsonAsync("/textures/"+tmp+".png.mcmeta").then(async(json)=>{
             if (json.animation==null) return;
-            const numFrames = textureTmp.image.height/16;
             waitForImage(textureTmp).then(()=>{
+                const numFrames = textureTmp.image.height/textureTmp.image.width;
                 const frametime=json.animation.frametime||1;
                 textureTmp.repeat.y=1/numFrames; var frame=0;
                 setInterval(() => {
@@ -142,18 +143,18 @@ async function variantToMesh(variant) {//generates a threejs mesh from a mincraf
         if (element.rotation!=null) {
             if (element.rotation.axis=="x") {
                 newGeometry.rotateX(element.rotation.angle/180*Math.PI);
-                if (rotation.rescale==true) {var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(1,multiplier,multiplier);}
+                if (element.rotation.rescale==true) {var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(1,multiplier,multiplier);}
             } else if (element.rotation.axis=="y") {
                 newGeometry.rotateY(element.rotation.angle/180*Math.PI);var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;
-                if (rotation.rescale==true) {var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(multiplier,1,multiplier);}
+                if (element.rotation.rescale==true) {var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(multiplier,1,multiplier);}
             } else if (element.rotation.axis=="z") {
                 newGeometry.rotateZ(element.rotation.angle/180*Math.PI);var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;
-                if (rotation.rescale==true) {var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(multiplier,multiplier,1);}
+                if (element.rotation.rescale==true) {var multiplier=Math.sin((90+element.rotation.angle)/180*Math.PI)*2;newGeometry.scale(multiplier,multiplier,1);}
             }
         }
         newGeometry.translate(...vec3Div(vec3Sub(element.from,vec3Sub([8,8,8],vec3Div(vec3Sub(element.to,element.from),2))),16))// ( from-( 8-( ( to-from )/2 ) ) )/16
 
-        const loadOrder = ["east","west","up","down","north","south"];
+        const loadOrder = ["east","west","up","down","south","north"];
         for (let j = 0; j < loadOrder.length; j++) {
             const face = element.faces[loadOrder[j]];
             if (face!=null) {
@@ -169,8 +170,8 @@ async function variantToMesh(variant) {//generates a threejs mesh from a mincraf
                 uv=[uv[0],16-uv[1], uv[2],16-uv[3]];
                 // [0,1, 1,1,  0,0,  1,0]
                 uv=[uv[0],uv[1], uv[2],uv[1], uv[0],uv[3], uv[2],uv[3]];
-                var rotation=face.rotation||0;// [0,1,  1,1,  0,0,  1,0] -> [0,0,  0,1,  1,0,  1,1] rotate clockwise
-                for (let i = 0; i < rotation/90; i++) {
+                // [0,1,  1,1,  0,0,  1,0] -> [0,0,  0,1,  1,0,  1,1] rotate clockwise
+                for (let i = 0; i < (face.rotation||0)/90; i++) {
                     uv = [uv[4],uv[5], uv[0],uv[1], uv[6],uv[7], uv[2],uv[3]];
                 }
                 uvs.push(...uv.map((val)=>val/16));
@@ -341,7 +342,7 @@ function setupThree() {//initalize threejs scene and materials
     
     document.body.appendChild(renderer.domElement);
     controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableKeys = false
+    controls.enableKeys = false;
 
     defMaterial = new THREE.MeshBasicMaterial({ color: 0xc00030, transparent: true, opacity: 0.5 });
     TurtleMat = new THREE.MeshBasicMaterial({ map: new THREE.TextureLoader().load("model/turtle.png") });
@@ -365,11 +366,11 @@ async function setScene(index) {
         if (child instanceof THREE.Mesh) { child.material = TurtleMat; }
     });
     object.name = "turtle" + index;
-    object.position.set(...turtles[turtleId].pos);
     scene.add(object);
     sceneData.turtle.model = object;
     camera.position.set(...vec3Add(turtle.getPos(),[-2.8868,2.8868,2.8868]));
     turtle.cameraFocus();
+    turtle.update();
     Object.entries(turtles[turtleId].worldData).forEach(([x,worldDataX])=>{
         if (worldDataX==null)return;
         Object.entries(worldDataX).forEach(([y,worldDataXY])=>{
@@ -377,8 +378,8 @@ async function setScene(index) {
             Object.entries(worldDataXY).forEach(([z,block])=>{
                 if (block==null) return;
                 setBlock([x,y,z],block.name,block.state);
-            })
-        })
+            });
+        });
     });
     detect();
 }
@@ -420,6 +421,7 @@ async function setBlock(pos,name,state) {
     }
     turtles[turtleId].worldData=worldData;
     sceneData.worldData=worldModels;
+    saveState();
 }
 //#endregion threejs
 
@@ -434,14 +436,13 @@ async function detect(recursive) {
     const downOutput = await turtle.actions.inspectDown();
     if (downOutput!=null) setBlock(vec3Add(turtlePos,[0,-1,0]),downOutput.name,downOutput.state); else setBlock(vec3Add(turtlePos,[0,-1,0]),null,null);
     //detect in each direction and set blocks if needed
-    /*for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 4; i++) {
         const output = await turtle.actions.inspect();
         const pos=vec3Add(turtlePos,turtle.getForward())
         if (output!=null) setBlock(pos,output.name,output.state);
         else setBlock(pos,null,null);
         await turtle.actions.turnRight(true);
-    }*/
-    saveState();
+    }
     if (recursive!==true) turtle.setBusy(false);
 }
 var onNotBusy;
@@ -461,8 +462,8 @@ const turtle = window.turtle = {//window.turtle make is accessable from the cons
         case 2: return [0,0, 1]; case 3: return [-1,0,0];
     } },
     "getCameraPos":()=>{ return xyzTovec3(camera.position); },
-    "setPos":(pos)=>{ turtles[turtleId].pos=pos;turtle.updatePos(); },
-    "setRot":(d)=>{ turtles[turtleId].d=d;turtle.updateRot(); },
+    "setPos":(pos)=>{ turtles[turtleId].pos=pos;turtle.updatePos(); saveState(); },
+    "setRot":(d)=>{ turtles[turtleId].d=d;turtle.updateRot(); saveState(); },
     "cameraFocus":()=>{
         const turtlePos=turtles[turtleId].pos;
         controls.target.set(...turtlePos); controls.update();
